@@ -20,7 +20,7 @@ interface TranscriptDao {
     @Query("SELECT * FROM transcripts WHERE recordingId = :recId")
     fun getByRecording(recId: Long): Transcript?
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(tr: Transcript): Long
 }
 
@@ -29,7 +29,7 @@ interface SummaryDao {
     @Query("SELECT * FROM summaries WHERE recordingId = :recId")
     fun getByRecording(recId: Long): Summary?
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(s: Summary): Long
 }
 
@@ -40,4 +40,7 @@ interface SegmentDao {
 
     @Insert
     fun insertAll(items: List<Segment>)
+
+    @Query("DELETE FROM segments WHERE recordingId = :recId")
+    fun deleteByRecording(recId: Long)
 }

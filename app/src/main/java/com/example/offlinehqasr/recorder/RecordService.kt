@@ -1,12 +1,20 @@
 package com.example.offlinehqasr.recorder
 
-import android.app.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.media.*
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import android.util.Log
 import com.example.offlinehqasr.R
 import com.example.offlinehqasr.data.AppDb
 import com.example.offlinehqasr.data.entities.Recording
@@ -14,12 +22,14 @@ import com.example.offlinehqasr.ui.MainActivity
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.system.measureTimeMillis
+import java.util.concurrent.atomic.AtomicBoolean
 
 class RecordService : Service() {
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
     private var startTime: Long = 0L
     private lateinit var outFile: File
@@ -32,13 +42,16 @@ class RecordService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(1, buildNotification())
-        job = CoroutineScope(Dispatchers.IO).launch { recordLoop() }
+        startForeground(NOTIFICATION_ID, buildNotification())
+        running.set(true)
+        job = serviceScope.launch { recordLoop() }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         job?.cancel()
+        running.set(false)
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -60,42 +73,59 @@ class RecordService : Service() {
     }
 
     private suspend fun recordLoop() {
-        val sr = 48000
-        val ch = AudioFormat.CHANNEL_IN_MONO
-        val fmt = AudioFormat.ENCODING_PCM_16BIT
-        val minBuf = AudioRecord.getMinBufferSize(sr, ch, fmt)
-        val rec = AudioRecord(MediaRecorder.AudioSource.MIC, sr, ch, fmt, minBuf * 2)
+        try {
+            val sampleRate = 48_000
+            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val encoding = AudioFormat.ENCODING_PCM_16BIT
+            val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, encoding)
+            val recorder = AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                sampleRate,
+                channelConfig,
+                encoding,
+                minBuf * 2
+            )
 
-        val dir = File(filesDir, "audio"); dir.mkdirs()
-        outFile = File(dir, "rec_${System.currentTimeMillis()}.wav")
-        FileOutputStream(outFile).use { fos ->
-            // Write provisional WAV header (will fix sizes at end)
-            writeWavHeader(fos, 1, sr, 16, 0)
-            val buf = ByteArray(minBuf)
-            startTime = System.currentTimeMillis()
-            rec.startRecording()
-            while (isActive) {
-                val n = rec.read(buf, 0, buf.size)
-                if (n > 0) fos.write(buf, 0, n)
-                delay(10)
+            val dir = File(filesDir, "audio"); dir.mkdirs()
+            outFile = File(dir, "rec_${System.currentTimeMillis()}.wav")
+
+            try {
+                FileOutputStream(outFile).use { fos ->
+                    // Write provisional WAV header (will fix sizes at end)
+                    writeWavHeader(fos, 1, sampleRate, 16, 0)
+                    val buffer = ByteArray(minBuf)
+                    startTime = System.currentTimeMillis()
+                    recorder.startRecording()
+                    while (isActive) {
+                        val read = recorder.read(buffer, 0, buffer.size)
+                        if (read > 0) fos.write(buffer, 0, read)
+                        delay(10)
+                    }
+                    recorder.stop()
+                    // Fix header sizes
+                    val totalAudioLen = outFile.length() - WAV_HEADER_SIZE
+                    RandomAccessFile(outFile, "rw").use { raf ->
+                        raf.seek(0)
+                        writeWavHeader(raf, 1, sampleRate, 16, totalAudioLen.toInt())
+                    }
+                }
+            } finally {
+                recorder.release()
             }
-            rec.stop()
-            rec.release()
-            // Fix header sizes
-            val totalAudioLen = outFile.length() - 44
-            RandomAccessFile(outFile, "rw").use { raf ->
-                raf.seek(0)
-                writeWavHeader(raf, 1, sr, 16, totalAudioLen.toInt())
-            }
+
+            val duration = System.currentTimeMillis() - startTime
+            val db = AppDb.get(this)
+            val recId = db.recordingDao().insert(
+                Recording(0, outFile.absolutePath, System.currentTimeMillis(), duration)
+            )
+
+            // Enqueue transcription work
+            TranscribeWork.enqueue(this, recId, outFile.absolutePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "Recording failed", e)
+        } finally {
+            stopSelf()
         }
-
-        val dur = System.currentTimeMillis() - startTime
-        val db = AppDb.get(this)
-        val recId = db.recordingDao().insert(Recording(0, outFile.absolutePath, System.currentTimeMillis(), dur))
-
-        // Enqueue transcription work
-        TranscribeWork.enqueue(this, recId, outFile.absolutePath)
-        stopSelf()
     }
 
     private fun writeWavHeader(stream: java.io.OutputStream, channels: Int, sampleRate: Int, bits: Int, dataLen: Int) {
@@ -116,5 +146,23 @@ class RecordService : Service() {
         header.put("data".toByteArray())
         header.putInt(dataLen)
         stream.write(header.array(), 0, 44)
+    }
+
+    companion object {
+        private const val NOTIFICATION_ID = 1
+        private const val WAV_HEADER_SIZE = 44L
+        private val running = AtomicBoolean(false)
+        private const val TAG = "RecordService"
+
+        fun start(context: Context) {
+            val intent = Intent(context, RecordService::class.java)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun stop(context: Context) {
+            context.stopService(Intent(context, RecordService::class.java))
+        }
+
+        fun isRunning(): Boolean = running.get()
     }
 }
