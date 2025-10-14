@@ -12,13 +12,12 @@ android {
         applicationId = "com.example.offlinehqasr"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 8
+        versionName = "0.6.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
-        buildConfigField("boolean", "USE_WHISPER", "false")
     }
 
     buildTypes {
@@ -54,6 +53,8 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Room
     implementation("androidx.room:room-runtime:2.6.1")
@@ -78,4 +79,5 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+    androidTestImplementation("androidx.work:work-testing:2.9.0")
 }

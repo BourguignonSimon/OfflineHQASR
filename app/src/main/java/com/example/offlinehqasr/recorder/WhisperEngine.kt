@@ -1,10 +1,14 @@
 package com.example.offlinehqasr.recorder
 
-import android.content.Context
-import com.example.offlinehqasr.BuildConfig
+import com.example.offlinehqasr.settings.UserSettings
 import java.io.File
 
-class WhisperEngine(private val ctx: Context) : SpeechToTextEngine {
+class WhisperEngine(private val modelFile: File) : SpeechToTextEngine {
+
+    init {
+        require(modelFile.exists()) { "Whisper model missing at ${modelFile.absolutePath}" }
+    }
+
     override fun transcribeFile(path: String): TranscriptionResult {
         // Placeholder: integrate JNI binding to whisper.cpp here.
         // For now, just throw if called.
@@ -16,11 +20,14 @@ class WhisperEngine(private val ctx: Context) : SpeechToTextEngine {
             runCatching { System.loadLibrary("whisper") }.isSuccess
         }
 
-        fun isAvailable(ctx: Context): Boolean {
-            if (!BuildConfig.USE_WHISPER) return false
-            val modelDir = File(ctx.filesDir, "models/whisper")
-            val hasModel = modelDir.exists() && (modelDir.listFiles()?.isNotEmpty() == true)
-            return hasModel && nativeReady
+        fun resolveModelFile(settings: UserSettings): File? {
+            val path = settings.whisperModelPath ?: return null
+            val file = File(path)
+            return if (file.exists()) file else null
+        }
+
+        fun isAvailable(settings: UserSettings): Boolean {
+            return resolveModelFile(settings) != null && nativeReady
         }
     }
 }

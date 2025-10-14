@@ -5,10 +5,12 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.example.offlinehqasr.data.AppDb
+import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.zip.ZipInputStream
+import org.json.JSONArray
 import org.json.JSONObject
 
 object ExportUtils {
@@ -74,38 +76,78 @@ object ExportUtils {
         val sum = db.summaryDao().getByRecording(recId)?.json ?: "{}"
         val segs = db.segmentDao().getByRecording(recId)
 
-        val root = JSONObject()
-        root.put("file", rec.filePath)
-        root.put("createdAt", rec.createdAt)
-        root.put("durationMs", rec.durationMs)
-        root.put("transcript", tr?.text ?: "")
-        root.put("summary", JSONObject(sum))
-        val segArr = org.json.JSONArray()
-        for (s in segs) {
-            val o = JSONObject()
-            o.put("startMs", s.startMs)
-            o.put("endMs", s.endMs)
-            o.put("text", s.text)
-            segArr.put(o)
-        }
-        root.put("segments", segArr)
+        val exportJson = buildSessionJson(
+            rec,
+            tr,
+            JSONObject(sum),
+            segs,
+            Build.MODEL ?: "unknown"
+        )
 
         val out = File(outDir, File(rec.filePath).nameWithoutExtension + ".json")
-        out.writeText(root.toString(2), Charsets.UTF_8)
+        out.writeText(exportJson.toString(2), Charsets.UTF_8)
         return out.absolutePath
     }
 
-    fun copyAndMaybeUnzip(ctx: Context, uri: Uri): String {
+    internal fun buildSessionJson(
+        rec: com.example.offlinehqasr.data.entities.Recording,
+        transcript: com.example.offlinehqasr.data.entities.Transcript?,
+        summaryJson: JSONObject,
+        segments: List<com.example.offlinehqasr.data.entities.Segment>,
+        deviceName: String
+    ): JSONObject {
+        val root = JSONObject()
+        root.put("id", rec.id.toString())
+        root.put("device", deviceName)
+
+        val audio = JSONObject()
+        audio.put("path", rec.filePath)
+        audio.put("duration_s", rec.durationMs / 1000.0)
+        root.put("audio", audio)
+
+        val sttObj = summaryJson.optJSONObject("stt") ?: JSONObject()
+        if (!sttObj.has("engine")) sttObj.put("engine", "vosk")
+        if (!sttObj.has("language")) sttObj.put("language", "auto")
+        root.put("stt", sttObj)
+
+        root.put("transcript", transcript?.text ?: "")
+
+        val segArr = JSONArray()
+        segments.forEach { segment ->
+            segArr.put(
+                JSONObject()
+                    .put("t0", segment.startMs / 1000.0)
+                    .put("t1", segment.endMs / 1000.0)
+                    .put("text", segment.text)
+            )
+        }
+        root.put("segments", segArr)
+
+        val summaryNode = summaryJson.optJSONObject("summary") ?: JSONObject()
+        val bullets = summaryNode.optJSONArray("bullets") ?: JSONArray()
+        val summaryWrapper = JSONObject()
+        summaryWrapper.put("bullets", bullets)
+        summaryWrapper.put("keywords", summaryJson.optJSONArray("keywords") ?: JSONArray())
+        root.put("summary", summaryWrapper)
+
+        return root
+    }
+
+    fun importVoskModel(ctx: Context, uri: Uri): String {
         val cr: ContentResolver = ctx.contentResolver
-        val name = queryName(cr, uri) ?: "import_${System.currentTimeMillis()}"
         val models = File(ctx.filesDir, "models"); models.mkdirs()
-        val target = File(models, name)
         cr.openInputStream(uri)?.use { ins ->
-            return if (name.lowercase().endsWith(".zip")) {
-                importVoskZip(models, ins)
-            } else {
-                importWhisperModel(models, ins, name)
-            }
+            return importVoskZip(models, ins)
+        }
+        error("Import failed")
+    }
+
+    fun importWhisperModel(ctx: Context, uri: Uri): String {
+        val cr: ContentResolver = ctx.contentResolver
+        val models = File(ctx.filesDir, "models"); models.mkdirs()
+        val name = queryName(cr, uri) ?: "whisper_${System.currentTimeMillis()}"
+        cr.openInputStream(uri)?.use { ins ->
+            return importWhisperModel(models, ins, name)
         }
         error("Import failed")
     }
@@ -173,9 +215,12 @@ object ExportUtils {
 
     private fun importWhisperModel(modelsDir: File, input: InputStream, originalName: String): String {
         val whisperDir = File(modelsDir, "whisper"); whisperDir.mkdirs()
-        val sanitized = originalName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val baseName = sanitized.substringBeforeLast('.')
-        val extension = sanitized.substringAfterLast('.', "")
+        val sanitized = originalName
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .ifBlank { "model_${System.currentTimeMillis()}" }
+        val normalized = if (sanitized.startsWith("user_")) sanitized else "user_$sanitized"
+        val baseName = normalized.substringBeforeLast('.')
+        val extension = normalized.substringAfterLast('.', "")
         var candidate = if (extension.isEmpty()) File(whisperDir, baseName) else File(whisperDir, "$baseName.$extension")
         if (candidate.exists()) {
             val suffix = System.currentTimeMillis()

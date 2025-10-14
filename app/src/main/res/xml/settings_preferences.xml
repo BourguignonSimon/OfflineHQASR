@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <SwitchPreferenceCompat
+        app:key="use_whisper"
+        app:title="@string/settings_use_whisper_title"
+        app:summary="@string/settings_use_whisper_summary" />
+
+    <Preference
+        app:key="whisper_model_path"
+        app:title="@string/settings_whisper_model_title"
+        app:summary="@string/settings_whisper_model_summary" />
+
+    <ListPreference
+        app:key="preferred_language"
+        app:title="@string/settings_language_title"
+        app:entries="@array/settings_language_entries"
+        app:entryValues="@array/settings_language_values"
+        app:defaultValue="auto"
+        app:summary="%s" />
+
+    <Preference
+        app:key="purge_all"
+        app:title="@string/settings_purge_title"
+        app:summary="@string/settings_purge_summary"
+        app:iconSpaceReserved="false" />
+
+</PreferenceScreen>

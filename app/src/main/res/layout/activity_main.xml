@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="?attr/colorSurface"
-        app:title="OfflineHQASR"
+        app:title="@string/app_name"
         app:menu="@menu/main_menu" />
 
     <LinearLayout
@@ -24,7 +24,7 @@
             android:id="@+id/statusText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Vosk: — | Whisper: —"
+            android:text="@string/model_status_placeholder"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:paddingBottom="8dp" />
 
@@ -40,7 +40,7 @@
         android:id="@+id/recordFab"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:contentDescription="Record"
+        android:contentDescription="@string/content_desc_record"
         app:srcCompat="@android:drawable/ic_btn_speak_now"
         app:layout_anchorGravity="bottom|end"
         app:layout_anchor="@id/recordingsList"

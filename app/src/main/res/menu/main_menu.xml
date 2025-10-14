@@ -2,11 +2,14 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/action_import_vosk"
-        android:title="Importer modèle Vosk" />
+        android:title="@string/menu_import_vosk" />
     <item
         android:id="@+id/action_import_whisper"
-        android:title="Importer modèle Whisper" />
+        android:title="@string/menu_import_whisper" />
     <item
         android:id="@+id/action_export_markdown"
-        android:title="Exporter Markdown" />
+        android:title="@string/menu_export_markdown" />
+    <item
+        android:id="@+id/action_settings"
+        android:title="@string/menu_settings" />
 </menu>

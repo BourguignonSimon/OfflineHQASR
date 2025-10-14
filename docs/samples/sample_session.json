@@ -1,0 +1,8 @@
+{
+  "id": "session-uuid",
+  "device": "Pixel-7",
+  "audio": {"path": "files/audio/2025-10-14.wav", "duration_s": 123.4},
+  "stt": {"engine": "vosk", "language": "fr"},
+  "segments": [{"t0": 0.0, "t1": 3.2, "text": "Bonjour à tous."}],
+  "summary": {"bullets": ["Point A", "Point B"], "keywords": ["mot-clé A", "mot-clé B"]}
+}

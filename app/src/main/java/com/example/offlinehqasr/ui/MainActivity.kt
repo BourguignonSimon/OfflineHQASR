@@ -17,6 +17,7 @@ import com.example.offlinehqasr.data.AppDb
 import com.example.offlinehqasr.data.entities.Recording
 import com.example.offlinehqasr.databinding.ActivityMainBinding
 import com.example.offlinehqasr.export.ExportUtils
+import com.example.offlinehqasr.settings.SettingsRepository
 import com.example.offlinehqasr.recorder.RecordService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,6 +27,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var isRecording = false
+    private val settingsRepository by lazy { SettingsRepository(this) }
+    private var pendingImport: ImportMode? = null
 
     private val audioPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -38,7 +41,11 @@ class MainActivity : AppCompatActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private val pickFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { handleImport(it) }
+        val mode = pendingImport
+        pendingImport = null
+        if (uri != null && mode != null) {
+            handleImport(uri, mode)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,9 +62,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                R.id.action_import_vosk -> { openFilePicker(arrayOf("application/zip")); true }
-                R.id.action_import_whisper -> { openFilePicker(arrayOf("*/*")); true }
+                R.id.action_import_vosk -> { openFilePicker(ImportMode.VOSK, arrayOf("application/zip")); true }
+                R.id.action_import_whisper -> { openFilePicker(ImportMode.WHISPER, arrayOf("*/*")); true }
                 R.id.action_export_markdown -> { exportAllMarkdown(); true }
+                R.id.action_settings -> { startActivity(SettingsActivity.createIntent(this)); true }
                 else -> false
             }
         }
@@ -117,11 +125,12 @@ class MainActivity : AppCompatActivity() {
         refreshList()
     }
 
-    private fun openFilePicker(mimes: Array<String>) {
+    private fun openFilePicker(mode: ImportMode, mimes: Array<String>) {
+        pendingImport = mode
         pickFile.launch(mimes)
     }
 
-    private fun handleImport(uri: Uri) {
+    private fun handleImport(uri: Uri, mode: ImportMode) {
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: SecurityException) {
@@ -129,7 +138,15 @@ class MainActivity : AppCompatActivity() {
         }
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val name = ExportUtils.copyAndMaybeUnzip(this@MainActivity, uri)
+                val name = when (mode) {
+                    ImportMode.VOSK -> ExportUtils.importVoskModel(this@MainActivity, uri)
+                    ImportMode.WHISPER -> {
+                        val imported = ExportUtils.importWhisperModel(this@MainActivity, uri)
+                        val path = File(filesDir, "models/whisper/$imported").absolutePath
+                        settingsRepository.setWhisperModelPath(path)
+                        imported
+                    }
+                }
                 launch(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, getString(R.string.import_success, name), Toast.LENGTH_LONG).show()
                     updateStatus()
@@ -178,5 +195,10 @@ class MainActivity : AppCompatActivity() {
         if (!dir.exists()) return getString(R.string.model_status_missing)
         val children = dir.listFiles()
         return if (children.isNullOrEmpty()) getString(R.string.model_status_incomplete) else getString(R.string.model_status_ready)
+    }
+
+    private enum class ImportMode {
+        VOSK,
+        WHISPER
     }
 }

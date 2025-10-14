@@ -11,7 +11,29 @@ import java.io.File
 import java.io.FileInputStream
 
 data class TranscriptionResult(val text: String, val segments: List<Segment>, val durationMs: Long) {
-    fun toTranscript(recordingId: Long) = Transcript(0, recordingId, text)
+    fun toTranscript(recordingId: Long) = Transcript(0, recordingId, normalizedText())
+
+    fun normalizedText(): String = text.replace(Regex("\s+"), " ").trim()
+
+    fun mergeShortSegments(minDurationMs: Long = 750L): List<Segment> {
+        if (segments.isEmpty()) return emptyList()
+        val merged = mutableListOf<Segment>()
+        var current = segments.first()
+        for (next in segments.drop(1)) {
+            val duration = current.endMs - current.startMs
+            current = if (duration < minDurationMs) {
+                current.copy(
+                    endMs = next.endMs,
+                    text = (current.text + " " + next.text).replace(Regex("\s+"), " ").trim()
+                )
+            } else {
+                merged += current
+                next
+            }
+        }
+        merged += current
+        return merged
+    }
 }
 
 class VoskEngine(private val ctx: Context) : SpeechToTextEngine {
@@ -83,7 +105,7 @@ class VoskEngine(private val ctx: Context) : SpeechToTextEngine {
                         recordingId = 0,
                         startMs = start,
                         endMs = end,
-                        text = text.trim()
+                        text = text.trim().replace(Regex("\s+"), " ")
                     )
                 )
             }

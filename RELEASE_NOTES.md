@@ -1,5 +1,15 @@
 # RELEASE_NOTES
 
+## v0.6.2
+- Mise à jour toolchain (AGP 8.6.1 / Gradle 8.7) et nettoyage .gitignore
+- Workflow GitHub Actions (assembleDebug, test, lint)
+- README refondu + exemples d’exports JSON/Markdown
+- Paramètres Whisper: activation runtime, sélection modèle, langue préférée
+- Action "Purger toutes les données" avec confirmation
+- Internationalisation FR/EN de l’UI
+- Export JSON enrichi (audio, stt, segments, summary) + échantillons docs/samples
+- Suite de tests unitaires/instrumentés (normalisation, fusion segments, pipeline export)
+
 ## v0.6.0
 - UI Détail: lecteur audio, segments cliquables, export JSON
 - Import modèles via menu (Vosk zip, Whisper gguf)
