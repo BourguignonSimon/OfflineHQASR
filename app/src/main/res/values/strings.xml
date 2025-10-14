@@ -1,0 +1,58 @@
+<resources>
+    <string name="app_name">OfflineHQASR</string>
+
+    <!-- Model status -->
+    <string name="model_status_template">Vosk : %1$s | Whisper : %2$s</string>
+    <string name="model_status_missing">—</string>
+    <string name="model_status_incomplete">Incomplet</string>
+    <string name="model_status_ready">OK</string>
+
+    <!-- Permissions & recording -->
+    <string name="recording_started">Enregistrement démarré</string>
+    <string name="recording_stopped">Enregistrement arrêté</string>
+    <string name="permission_microphone_required">L'accès au micro est requis pour enregistrer.</string>
+
+    <!-- Menu -->
+    <string name="menu_import_vosk">Importer modèle Vosk</string>
+    <string name="menu_import_whisper">Importer modèle Whisper</string>
+    <string name="menu_export_markdown">Exporter Markdown</string>
+    <string name="menu_purge_data">Purger les données locales</string>
+
+    <!-- Import / export feedback -->
+    <string name="import_success">Importé : %1$s</string>
+    <string name="import_failure">Échec import : %1$s</string>
+    <string name="export_markdown_success">Exporté vers : %1$s</string>
+    <string name="export_json_success">JSON : %1$s</string>
+
+    <!-- Purge dialog -->
+    <string name="purge_dialog_title">Supprimer toutes les données ?</string>
+    <string name="purge_dialog_message">Audio, transcriptions, résumés et modèles seront définitivement supprimés.</string>
+    <string name="purge_dialog_confirm">Purger</string>
+    <string name="purge_dialog_cancel">Annuler</string>
+    <string name="purge_success">Données locales supprimées.</string>
+    <string name="purge_error">Impossible de purger : %1$s</string>
+
+    <!-- Detail header -->
+    <string name="detail_header_title">Détail session</string>
+    <string name="detail_header_duration">Durée : %1$s</string>
+    <string name="detail_header_created">Enregistré le %1$s</string>
+    <string name="detail_header_summary">Résumé</string>
+    <string name="detail_header_context">Contexte</string>
+    <string name="detail_header_bullets">Points clés</string>
+    <string name="detail_header_no_summary">Aucun résumé disponible pour l'instant.</string>
+
+    <!-- Detail actions -->
+    <string name="detail_play">Lecture</string>
+    <string name="detail_pause">Pause</string>
+    <string name="detail_export_json">Exporter JSON</string>
+
+    <!-- Segments -->
+    <string name="segments_header">Segments</string>
+    <string name="segment_time_range">%1$s → %2$s</string>
+
+    <!-- Summary -->
+    <string name="summary_section_title">Synthèse</string>
+    <string name="summary_topics_label">Sujets</string>
+    <string name="summary_keywords_label">Mots-clés</string>
+    <string name="summary_actions_label">Actions</string>
+</resources>

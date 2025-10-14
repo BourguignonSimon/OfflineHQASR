@@ -29,7 +29,14 @@ class RecordingAdapter(private val items: List<Recording>, private val onClick: 
         val it = items[position]
         holder.title.text = it.filePath.substringAfterLast('/')
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-        holder.sub.text = sdf.format(Date(it.createdAt)) + " • " + (it.durationMs/1000) + "s"
+        holder.sub.text = sdf.format(Date(it.createdAt)) + " • " + formatDuration(it.durationMs)
         holder.itemView.setOnClickListener { onClick(it) }
+    }
+
+    private fun formatDuration(durationMs: Long): String {
+        val totalSeconds = durationMs / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
     }
 }
