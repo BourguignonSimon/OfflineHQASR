@@ -1,0 +1,4 @@
+*.md linguist-documentation
+*.png linguist-documentation
+*.jpg linguist-documentation
+docs/** linguist-documentation

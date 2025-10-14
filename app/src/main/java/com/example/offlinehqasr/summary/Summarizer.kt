@@ -28,8 +28,7 @@ object Summarizer {
     fun summarizeToJson(text: String, durationMs: Long): com.example.offlinehqasr.data.entities.Summary {
         val title = text.split('.', '!', '?').firstOrNull()?.take(80) ?: "Session audio"
         val context = if (text.length > 200) text.take(200) + "…" else text
-        val bullets = text.split('.', '
-').map { it.trim() }.filter { it.length > 20 }.take(5)
+        val bullets = text.split('.', '!', '?').map { it.trim() }.filter { it.length > 20 }.take(5)
         val topics = extractTopWords(text, 5)
         val keywords = extractTopWords(text, 10)
 
@@ -52,10 +51,16 @@ object Summarizer {
         val words = text.lowercase()
             .replace(Regex("[^a-zàâçéèêëîïôûùüÿñæœ0-9\s-]"), " ")
             .split(Regex("\s+"))
-            .filter { it.length > 3 && it !in stopFr }
+            .filter { it.length > 3 && it !in stopWords }
         val counts = words.groupingBy { it }.eachCount()
         return counts.entries.sortedByDescending { it.value }.map { it.key }.take(n)
     }
 
-    private val stopFr = setOf("dans","pour","avec","vous","nous","mais","elles","ils","elles","ceci","cela","cest","sont","plus","alors","comme","avoir","être","vous","quoi","tout","aussi","leur","leurs","dont","chez","entre","ainsi","cela","cette","plusieurs","moins","tous")
+    private val stopWords = setOf(
+        "dans","pour","avec","vous","nous","mais","elles","ils","ceci","cela","cest","sont","plus","alors","comme","avoir",
+        "être","quoi","tout","aussi","leur","leurs","dont","chez","entre","ainsi","cela","cette","plusieurs","moins","tous",
+        "this","that","with","have","from","your","about","there","will","their","they","them","been","were","when","what",
+        "where","which","than","then","into","over","after","before","because","while","should","could","would","these","those",
+        "here","onto","ours","ourselves","hers","herself","himself","yourself"
+    )
 }

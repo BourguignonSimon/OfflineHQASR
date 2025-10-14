@@ -1,0 +1,58 @@
+<resources>
+    <string name="app_name">OfflineHQASR</string>
+
+    <!-- Model status -->
+    <string name="model_status_template">Vosk: %1$s | Whisper: %2$s</string>
+    <string name="model_status_missing">—</string>
+    <string name="model_status_incomplete">Missing files</string>
+    <string name="model_status_ready">Ready</string>
+
+    <!-- Permissions & recording -->
+    <string name="recording_started">Recording started</string>
+    <string name="recording_stopped">Recording stopped</string>
+    <string name="permission_microphone_required">Microphone access is required to record.</string>
+
+    <!-- Menu -->
+    <string name="menu_import_vosk">Import Vosk model</string>
+    <string name="menu_import_whisper">Import Whisper model</string>
+    <string name="menu_export_markdown">Export Markdown</string>
+    <string name="menu_purge_data">Purge local data</string>
+
+    <!-- Import / export feedback -->
+    <string name="import_success">Imported: %1$s</string>
+    <string name="import_failure">Import failed: %1$s</string>
+    <string name="export_markdown_success">Exported to: %1$s</string>
+    <string name="export_json_success">JSON: %1$s</string>
+
+    <!-- Purge dialog -->
+    <string name="purge_dialog_title">Delete everything?</string>
+    <string name="purge_dialog_message">Audio, transcripts, summaries and models will be permanently removed.</string>
+    <string name="purge_dialog_confirm">Purge</string>
+    <string name="purge_dialog_cancel">Cancel</string>
+    <string name="purge_success">Local data deleted.</string>
+    <string name="purge_error">Unable to purge: %1$s</string>
+
+    <!-- Detail header -->
+    <string name="detail_header_title">Session detail</string>
+    <string name="detail_header_duration">Duration: %1$s</string>
+    <string name="detail_header_created">Recorded on %1$s</string>
+    <string name="detail_header_summary">Summary</string>
+    <string name="detail_header_context">Context</string>
+    <string name="detail_header_bullets">Key points</string>
+    <string name="detail_header_no_summary">No summary available yet.</string>
+
+    <!-- Detail actions -->
+    <string name="detail_play">Play</string>
+    <string name="detail_pause">Pause</string>
+    <string name="detail_export_json">Export JSON</string>
+
+    <!-- Segments -->
+    <string name="segments_header">Segments</string>
+    <string name="segment_time_range">%1$s → %2$s</string>
+
+    <!-- Summary -->
+    <string name="summary_section_title">Overview</string>
+    <string name="summary_topics_label">Topics</string>
+    <string name="summary_keywords_label">Keywords</string>
+    <string name="summary_actions_label">Actions</string>
+</resources>
