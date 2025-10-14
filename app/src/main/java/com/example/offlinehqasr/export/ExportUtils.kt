@@ -102,6 +102,7 @@ object ExportUtils {
         cr.openInputStream(uri)?.use { ins ->
             val shouldUnzip = shouldTreatAsZip(name, mimeType, preferZip)
             return if (shouldUnzip) {
+            return if (name.lowercase().endsWith(".zip")) {
                 importVoskZip(models, ins)
             } else {
                 importWhisperModel(models, ins, name)

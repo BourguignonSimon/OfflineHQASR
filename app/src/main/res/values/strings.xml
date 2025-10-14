@@ -35,6 +35,18 @@
     <!-- Detail header -->
     <string name="detail_header_title">Détail session</string>
     <string name="detail_header_duration">Durée : %1$s</string>
+    <string name="model_status_template">Vosk: %1$s | Whisper: %2$s</string>
+    <string name="model_status_missing">—</string>
+    <string name="model_status_incomplete">Incomplet</string>
+    <string name="model_status_ready">OK</string>
+    <string name="recording_started">Enregistrement démarré</string>
+    <string name="recording_stopped">Enregistrement arrêté</string>
+    <string name="permission_microphone_required">L\'accès au micro est requis pour enregistrer.</string>
+    <string name="import_success">Importé: %1$s</string>
+    <string name="import_failure">Échec import: %1$s</string>
+    <string name="export_markdown_success">Exporté vers: %1$s</string>
+    <string name="detail_header_title">Détail session</string>
+    <string name="detail_header_duration">Durée: %1$s</string>
     <string name="detail_header_created">Enregistré le %1$s</string>
     <string name="detail_header_summary">Résumé</string>
     <string name="detail_header_context">Contexte</string>
@@ -51,8 +63,15 @@
     <string name="segment_time_range">%1$s → %2$s</string>
 
     <!-- Summary -->
+    <string name="detail_header_no_summary">Aucun résumé disponible pour l\'instant.</string>
+    <string name="detail_play">Lecture</string>
+    <string name="detail_pause">Pause</string>
+    <string name="detail_export_json">Exporter JSON</string>
+    <string name="segments_header">Segments</string>
+    <string name="segment_time_range">%1$s → %2$s</string>
     <string name="summary_section_title">Synthèse</string>
     <string name="summary_topics_label">Sujets</string>
     <string name="summary_keywords_label">Mots-clés</string>
     <string name="summary_actions_label">Actions</string>
+    <string name="export_json_success">JSON: %1$s</string>
 </resources>

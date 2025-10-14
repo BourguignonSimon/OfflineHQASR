@@ -141,6 +141,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleImport(uri: Uri, kind: ImportKind) {
+    private fun handleImport(uri: Uri) {
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: SecurityException) {
@@ -241,5 +242,30 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    private fun syncRecordingState() {
+        setRecordingState(RecordService.isRunning())
+    }
+
+    private fun setRecordingState(active: Boolean) {
+        isRecording = active
+        binding.recordFab.setImageResource(
+            if (active) android.R.drawable.ic_media_pause else android.R.drawable.ic_btn_speak_now
+        )
+    }
+
+    private fun modelStatusLabel(dir: File): String {
+        if (!dir.exists()) return getString(R.string.model_status_missing)
+        val children = dir.listFiles()
+        return if (children.isNullOrEmpty()) getString(R.string.model_status_incomplete) else getString(R.string.model_status_ready)
     }
 }
