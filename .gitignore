@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+/build/
+app/build/
+!/gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+/.settings/
+/.project
+/local.properties
+app/local.properties
+
+# Android Studio
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Generated
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,43 @@
+{
+  "id": "session-20240512-101530",
+  "device": {
+    "manufacturer": "Google",
+    "model": "Pixel 7"
+  },
+  "audio": {
+    "path": "files/audio/2024-05-12_10-15-30.wav",
+    "duration_s": 187.4,
+    "sample_rate_hz": 16000
+  },
+  "stt": {
+    "engine": "vosk",
+    "language": "fr-FR",
+    "version": "0.22"
+  },
+  "segments": [
+    {
+      "t0": 0.0,
+      "t1": 5.8,
+      "text": "Bonjour à toutes et à tous."
+    },
+    {
+      "t0": 5.8,
+      "t1": 17.4,
+      "text": "Aujourd'hui nous parlons roadmap produit et priorités trimestrielles."
+    }
+  ],
+  "summary": {
+    "title": "Point hebdo produit",
+    "context": "Réunion d'équipe produit du lundi matin",
+    "bullets": [
+      "Revue des objectifs Q3",
+      "Suivi de l'intégration Whisper offline",
+      "Préparation du prochain sprint"
+    ],
+    "keywords": ["roadmap", "sprint", "priorités"],
+    "actions": [
+      "Partager la maquette finale",
+      "Ouvrir un ticket de tests utilisateurs"
+    ]
+  }
+}

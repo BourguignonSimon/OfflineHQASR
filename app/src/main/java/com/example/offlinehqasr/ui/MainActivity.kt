@@ -1,23 +1,20 @@
 package com.example.offlinehqasr.ui
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
-import android.view.MenuItem
+import android.os.Build
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.offlinehqasr.R
 import com.example.offlinehqasr.data.AppDb
-import com.example.offlinehqasr.data.entities.Recording
 import com.example.offlinehqasr.databinding.ActivityMainBinding
 import com.example.offlinehqasr.export.ExportUtils
 import com.example.offlinehqasr.recorder.RecordService
@@ -30,8 +27,23 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var isRecording = false
 
+    private val audioPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            startRecordingInternal()
+        } else {
+            Toast.makeText(this, R.string.permission_microphone_required, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    private enum class ImportKind { VOSK, WHISPER }
+
+    private var pendingImport: ImportKind = ImportKind.VOSK
+
     private val pickFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { handleImport(it) }
+        val kind = pendingImport
+        uri?.let { handleImport(it, kind) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,27 +55,48 @@ class MainActivity : AppCompatActivity() {
         binding.recordingsList.layoutManager = LinearLayoutManager(this)
 
         binding.recordFab.setOnClickListener {
-            if (!isRecording) startRecording() else stopRecording()
+            if (!isRecording) startRecording() else stopRecordingInternal()
         }
 
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                R.id.action_import_vosk -> { openFilePicker(arrayOf("application/zip")); true }
-                R.id.action_import_whisper -> { openFilePicker(arrayOf("*/*")); true }
-                R.id.action_export_markdown -> { exportAllMarkdown(); true }
+                R.id.action_import_vosk -> {
+                    openFilePicker(ImportKind.VOSK); true
+                }
+
+                R.id.action_import_whisper -> {
+                    openFilePicker(ImportKind.WHISPER); true
+                }
+
+                R.id.action_export_markdown -> {
+                    exportAllMarkdown(); true
+                }
+
+                R.id.action_purge_data -> {
+                    confirmPurge(); true
+                }
+
                 else -> false
             }
         }
 
+        ensureNotificationPermission()
         updateStatus()
         refreshList()
+        syncRecordingState()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        syncRecordingState()
+        refreshList()
+        updateStatus()
     }
 
     private fun updateStatus() {
-        val filesDir = filesDir
-        val voskOk = File(filesDir, "models/vosk").exists()
-        val whisperOk = File(filesDir, "models/whisper").exists()
-        binding.statusText.text = "Vosk: " + (if (voskOk) "OK" else "—") + " | Whisper: " + (if (whisperOk) "OK" else "—")
+        val voskStatus = modelStatusLabel(File(filesDir, "models/vosk"))
+        val whisperStatus = modelStatusLabel(File(filesDir, "models/whisper"))
+        binding.statusText.text = getString(R.string.model_status_template, voskStatus, whisperStatus)
     }
 
     private fun refreshList() {
@@ -82,38 +115,53 @@ class MainActivity : AppCompatActivity() {
 
     private fun startRecording() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 10)
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
-        RecordService.start(this)
-        isRecording = true
-        binding.recordFab.setImageResource(android.R.drawable.ic_media_pause)
-        Toast.makeText(this, "Enregistrement démarré", Toast.LENGTH_SHORT).show()
+        startRecordingInternal()
     }
 
-    private fun stopRecording() {
+    private fun startRecordingInternal() {
+        ensureNotificationPermission()
+        RecordService.start(this)
+        setRecordingState(true)
+        Toast.makeText(this, R.string.recording_started, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopRecordingInternal() {
         RecordService.stop(this)
-        isRecording = false
-        binding.recordFab.setImageResource(android.R.drawable.ic_btn_speak_now)
-        Toast.makeText(this, "Enregistrement arrêté", Toast.LENGTH_SHORT).show()
+        setRecordingState(false)
+        Toast.makeText(this, R.string.recording_stopped, Toast.LENGTH_SHORT).show()
         refreshList()
     }
 
-    private fun openFilePicker(mimes: Array<String>) {
-        pickFile.launch(mimes)
+    private fun openFilePicker(kind: ImportKind) {
+        pendingImport = kind
+        pickFile.launch(arrayOf("*/*"))
     }
 
-    private fun handleImport(uri: Uri) {
+    private fun handleImport(uri: Uri, kind: ImportKind) {
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: SecurityException) {
+            // best effort; continue without persisted access
+        }
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val name = ExportUtils.copyAndMaybeUnzip(this@MainActivity, uri)
+                val mime = contentResolver.getType(uri)
+                val name = ExportUtils.copyAndMaybeUnzip(
+                    this@MainActivity,
+                    uri,
+                    mime,
+                    kind == ImportKind.VOSK
+                )
                 launch(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Importé: $name", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, getString(R.string.import_success, name), Toast.LENGTH_LONG).show()
                     updateStatus()
                 }
             } catch (e: Exception) {
                 launch(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Échec import: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, getString(R.string.import_failure, e.message ?: ""), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -123,7 +171,74 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val path = ExportUtils.exportAllToMarkdown(this@MainActivity)
             launch(Dispatchers.Main) {
-                Toast.makeText(this@MainActivity, "Exporté vers: $path", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this@MainActivity,
+                    getString(R.string.export_markdown_success, path),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    private fun syncRecordingState() {
+        setRecordingState(RecordService.isRunning())
+    }
+
+    private fun setRecordingState(active: Boolean) {
+        isRecording = active
+        binding.recordFab.setImageResource(
+            if (active) android.R.drawable.ic_media_pause else android.R.drawable.ic_btn_speak_now
+        )
+    }
+
+    private fun modelStatusLabel(dir: File): String {
+        if (!dir.exists()) return getString(R.string.model_status_missing)
+        val children = dir.listFiles()
+        return if (children.isNullOrEmpty()) getString(R.string.model_status_incomplete) else getString(R.string.model_status_ready)
+    }
+
+    private fun confirmPurge() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.purge_dialog_title)
+            .setMessage(R.string.purge_dialog_message)
+            .setPositiveButton(R.string.purge_dialog_confirm) { _, _ -> purgeAllData() }
+            .setNegativeButton(R.string.purge_dialog_cancel, null)
+            .show()
+    }
+
+    private fun purgeAllData() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                RecordService.stop(this@MainActivity)
+                val audio = File(filesDir, "audio")
+                val models = File(filesDir, "models")
+                val exports = File(filesDir, "exports")
+                if (audio.exists()) audio.deleteRecursively()
+                if (models.exists()) models.deleteRecursively()
+                if (exports.exists()) exports.deleteRecursively()
+                AppDb.get(this@MainActivity).clearAllTables()
+            }
+            launch(Dispatchers.Main) {
+                if (result.isSuccess) {
+                    setRecordingState(false)
+                    Toast.makeText(this@MainActivity, R.string.purge_success, Toast.LENGTH_LONG).show()
+                    refreshList()
+                    updateStatus()
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.purge_error, result.exceptionOrNull()?.localizedMessage ?: ""),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }
     }

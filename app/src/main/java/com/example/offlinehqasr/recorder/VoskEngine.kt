@@ -2,65 +2,120 @@ package com.example.offlinehqasr.recorder
 
 import android.content.Context
 import android.util.Log
-import org.vosk.Model
-import org.vosk.Recognizer
-import org.vosk.android.SpeechStreamService
-import java.io.File
-import java.io.FileInputStream
-import java.nio.charset.Charset
-import org.json.JSONObject
 import com.example.offlinehqasr.data.entities.Segment
 import com.example.offlinehqasr.data.entities.Transcript
+import org.json.JSONObject
+import org.vosk.Model
+import org.vosk.Recognizer
+import java.io.File
+import java.io.FileInputStream
 
 data class TranscriptionResult(val text: String, val segments: List<Segment>, val durationMs: Long) {
     fun toTranscript(recordingId: Long) = Transcript(0, recordingId, text)
 }
 
-class VoskEngine(private val ctx: Context) {
+class VoskEngine(private val ctx: Context) : SpeechToTextEngine {
 
-    fun transcribeFile(path: String): TranscriptionResult {
-        val modelDir = File(ctx.filesDir, "models/vosk")
-        require(modelDir.exists()) { "Modèle Vosk manquant. Importez-le via le menu." }
+    override fun transcribeFile(path: String): TranscriptionResult {
+        val baseDir = File(ctx.filesDir, "models/vosk")
+        val modelDir = resolveModelDir(baseDir)
         val model = Model(modelDir.absolutePath)
-
         val wav = File(path)
-        val fis = FileInputStream(wav)
-        val rec = Recognizer(model, 48000.0f)
+        val buffer = ByteArray(4096)
+        val segments = mutableListOf<Segment>()
+        val transcriptBuilder = StringBuilder()
+        var duration = 0L
 
-        val buf = ByteArray(4096)
-        val segs = mutableListOf<Segment>()
-        val sb = StringBuilder()
-        var totalMs = 0L
-
-        while (true) {
-            val n = fis.read(buf)
-            if (n <= 0) break
-            if (rec.acceptWaveForm(buf, n)) {
-                val res = rec.result
+        try {
+            FileInputStream(wav).use { fis ->
+                fis.channel.position(WAV_HEADER_SIZE)
+                val recognizer = Recognizer(model, 48_000f)
                 try {
-                    val json = JSONObject(res)
-                    val text = json.optString("text")
-                    sb.append(text).append(' ')
-                    val words = json.optJSONArray("result")
-                    if (words != null) {
-                        for (i in 0 until words.length()) {
-                            val w = words.getJSONObject(i)
-                            val start = (w.getDouble("start") * 1000).toLong()
-                            val end = (w.getDouble("end") * 1000).toLong()
-                            val wt = w.getString("word")
-                            segs.add(Segment(0, 0, start, end, wt))
-                            totalMs = end
+                    while (true) {
+                        val read = fis.read(buffer)
+                        if (read <= 0) break
+                        if (recognizer.acceptWaveForm(buffer, read)) {
+                            duration = parseResult(recognizer.result, segments, transcriptBuilder, duration)
                         }
                     }
-                } catch (e: Exception) {
-                    Log.w("VoskEngine", "Parse err: ${e.message}")
+                    // flush any trailing data
+                    duration = parseResult(recognizer.finalResult, segments, transcriptBuilder, duration)
+                } finally {
+                    recognizer.close()
                 }
-            } else {
-                // partial result ignored
             }
+        } finally {
+            model.close()
         }
-        rec.close()
-        fis.close()
-        return TranscriptionResult(sb.toString().trim(), segs, totalMs)
+
+        return TranscriptionResult(transcriptBuilder.toString().trim(), segments, duration)
+    }
+
+    private fun parseResult(
+        json: String,
+        segments: MutableList<Segment>,
+        transcriptBuilder: StringBuilder,
+        currentDuration: Long
+    ): Long {
+        if (json.isBlank()) return currentDuration
+        return try {
+            val obj = JSONObject(json)
+            val words = obj.optJSONArray("result") ?: return currentDuration
+            if (words.length() == 0) return currentDuration
+            val sentence = StringBuilder()
+            val first = words.getJSONObject(0)
+            val last = words.getJSONObject(words.length() - 1)
+            val start = (first.getDouble("start") * 1000).toLong()
+            val end = (last.getDouble("end") * 1000).toLong()
+            for (i in 0 until words.length()) {
+                val word = words.getJSONObject(i).optString("word")
+                if (word.isNotBlank()) {
+                    if (sentence.isNotEmpty()) sentence.append(' ')
+                    sentence.append(word)
+                }
+            }
+            val text = obj.optString("text").ifBlank { sentence.toString() }
+            if (text.isNotBlank()) {
+                transcriptBuilder.append(text.trim()).append(' ')
+                segments.add(
+                    Segment(
+                        id = 0,
+                        recordingId = 0,
+                        startMs = start,
+                        endMs = end,
+                        text = text.trim()
+                    )
+                )
+            }
+            end.coerceAtLeast(currentDuration)
+        } catch (e: Exception) {
+            Log.w(TAG, "Parse error", e)
+            currentDuration
+        }
+    }
+
+    private fun resolveModelDir(baseDir: File): File {
+        require(baseDir.exists()) { "Modèle Vosk manquant. Importez-le via le menu." }
+        if (containsModelFiles(baseDir)) return baseDir
+        val children = baseDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+        if (children.isEmpty()) {
+            error("Le dossier du modèle Vosk semble incomplet: ${baseDir.absolutePath}")
+        }
+        children.forEach { child ->
+            if (containsModelFiles(child)) return child
+        }
+        if (children.size == 1) {
+            return resolveModelDir(children.first())
+        }
+        error("Impossible de localiser le modèle Vosk dans ${baseDir.absolutePath}")
+    }
+
+    private fun containsModelFiles(dir: File): Boolean {
+        return File(dir, "conf").exists() || File(dir, "model.conf").exists()
+    }
+
+    companion object {
+        private const val TAG = "VoskEngine"
+        private const val WAV_HEADER_SIZE = 44L
     }
 }
