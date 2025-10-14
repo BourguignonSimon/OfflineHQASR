@@ -10,7 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Vosk models or extras could be hosted elsewhere if needed
+        maven("https://alphacephei.com/maven")
     }
 }
 rootProject.name = "OfflineHQASR-Android"
