@@ -27,4 +27,8 @@
     <string name="summary_keywords_label">Mots-clés</string>
     <string name="summary_actions_label">Actions</string>
     <string name="export_json_success">JSON: %1$s</string>
+    <string name="microphone_status_idle">Micro inactif</string>
+    <string name="microphone_status_source">Micro: %1$s</string>
+    <string name="microphone_status_warning">Flux audio faible détecté. Vérifiez la connexion ou rapprochez-vous de la source.</string>
+    <string name="microphone_status_error">Flux audio interrompu (%1$s).</string>
 </resources>

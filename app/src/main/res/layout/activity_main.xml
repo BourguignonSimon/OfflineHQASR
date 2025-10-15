@@ -20,6 +20,25 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="?attr/actionBarSize">
 
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/microphoneBanner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:layout_marginBottom="12dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="?attr/colorSecondaryContainer">
+
+            <TextView
+                android:id="@+id/microphoneBannerText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="12dp"
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                android:textColor="?attr/colorOnSecondaryContainer" />
+
+        </com.google.android.material.card.MaterialCardView>
+
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"
