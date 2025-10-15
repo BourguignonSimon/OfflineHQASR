@@ -12,4 +12,7 @@
 4. **Résumé**: Détail → vérifier résumé synthétisé dans export JSON.
 5. **Export Markdown**: menu → zip généré dans `files/exports`.
 6. **Import Whisper**: menu → `.gguf` copié dans `files/models/whisper`.
+7. **Sélection entrée micro**: connecter successivement casque filaire et Bluetooth. Lancer un enregistrement et vérifier dans les logs `RecordService` que la source détectée correspond (`wired-headset`, `bt-sco`, `builtin`).
+8. **Perte micro**: retirer le périphérique ou révoquer l'autorisation pendant l'enregistrement. La bannière rouge doit s'afficher avec le message adapté et l'enregistrement se termine proprement.
+9. **Bruit de fond**: enregistrer un environnement bruyant et comparer le WAV avec et sans pipeline (normalisation + noise-gate) pour confirmer la réduction du souffle.
 
