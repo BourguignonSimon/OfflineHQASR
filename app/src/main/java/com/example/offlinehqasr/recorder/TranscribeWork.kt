@@ -5,12 +5,11 @@ import android.util.Log
 import androidx.work.*
 import com.example.offlinehqasr.data.AppDb
 import com.example.offlinehqasr.data.entities.TranscriptFts
+import com.example.offlinehqasr.summary.StructuredSummaryParser
 import com.example.offlinehqasr.summary.Summarizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
-import org.json.JSONArray
-import org.json.JSONObject
 
 class TranscribeWork(appContext: Context, params: WorkerParameters): CoroutineWorker(appContext, params) {
 
@@ -73,7 +72,7 @@ class TranscribeWork(appContext: Context, params: WorkerParameters): CoroutineWo
             segmentDao.deleteByRecording(recordingId)
             segmentDao.insertAll(result.segments.map { it.copy(recordingId = recordingId) })
 
-            val summary = Summarizer.summarizeToJson(result.text, result.durationMs)
+            val summary = Summarizer.summarizeToJson(applicationContext, result.text, result.durationMs)
             val existingSummary = summaryDao.getByRecording(recordingId)
             val summaryEntity = summary.copy(id = existingSummary?.id ?: 0, recordingId = recordingId)
             summaryDao.insert(summaryEntity)
@@ -116,31 +115,18 @@ class TranscribeWork(appContext: Context, params: WorkerParameters): CoroutineWo
             return SummaryMetadata(emptyList(), emptyList(), emptyList(), emptyList())
         }
         return runCatching {
-            val root = JSONObject(json)
-            val keywords = root.optJSONArray("keywords").toStringList()
-            val tags = root.optJSONArray("tags").toStringList()
-            val topics = root.optJSONArray("topics").toStringList()
-            val participants = mutableSetOf<String>()
-            participants.addAll(root.optJSONArray("participants").toStringList())
-            val actions = root.optJSONArray("actions")
-            if (actions != null) {
-                for (i in 0 until actions.length()) {
-                    val who = actions.optJSONObject(i)?.optString("who")?.trim()
-                    if (!who.isNullOrEmpty()) {
-                        participants.add(who)
-                    }
-                }
-            }
-            SummaryMetadata(keywords, tags, participants.toList(), topics)
+            val parsed = StructuredSummaryParser.parseOrNull(json) ?: return SummaryMetadata(emptyList(), emptyList(), emptyList(), emptyList())
+            val participantNames = parsed.participants.mapNotNull { it.name.trim().takeIf { name -> name.isNotEmpty() } }
+                .toMutableSet()
+            parsed.actions.mapNotNull { it.who.trim().takeIf { who -> who.isNotEmpty() } }
+                .forEach { participantNames.add(it) }
+            SummaryMetadata(
+                keywords = parsed.keywords,
+                tags = parsed.tags,
+                participants = participantNames.toList(),
+                topics = parsed.topics
+            )
         }.getOrDefault(SummaryMetadata(emptyList(), emptyList(), emptyList(), emptyList()))
     }
 
-    private fun JSONArray?.toStringList(): List<String> {
-        if (this == null) return emptyList()
-        val values = mutableListOf<String>()
-        for (i in 0 until length()) {
-            optString(i)?.trim()?.takeIf { it.isNotEmpty() }?.let { values.add(it) }
-        }
-        return values
-    }
 }

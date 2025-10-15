@@ -26,6 +26,13 @@
     <string name="summary_topics_label">Sujets</string>
     <string name="summary_keywords_label">Mots-clés</string>
     <string name="summary_actions_label">Actions</string>
+    <string name="summary_decisions_label">Décisions</string>
+    <string name="summary_participants_label">Participants</string>
+    <string name="summary_tags_label">Tags</string>
+    <string name="summary_sentiments_label">Sentiments</string>
+    <string name="summary_citations_label">Citations</string>
+    <string name="summary_timings_label">Chronologie</string>
+    <string name="summary_none_placeholder">—</string>
     <string name="export_json_success">JSON: %1$s</string>
     <string name="microphone_error_placeholder">Micro désactivé.</string>
     <string name="microphone_error_icon">Alerte micro</string>

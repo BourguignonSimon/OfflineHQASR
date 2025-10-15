@@ -3,7 +3,6 @@ package com.example.offlinehqasr.ui
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.example.offlinehqasr.R
@@ -47,18 +46,49 @@ class DetailHeaderAdapter(
         } else {
             holder.summaryStatus.visibility = View.GONE
             holder.summaryContent.visibility = View.VISIBLE
-            holder.summaryContext.text = data.summary.context.ifBlank { "—" }
-            holder.summaryBullets.text = if (data.summary.bullets.isEmpty()) {
-                "—"
-            } else {
-                data.summary.bullets.joinToString(separator = "\n") { "• $it" }
-            }
-            holder.summaryTopics.text = data.summary.topics.takeIf { it.isNotEmpty() }?.joinToString(
-                separator = ", "
-            ) ?: "—"
-            holder.summaryKeywords.text = data.summary.keywords.takeIf { it.isNotEmpty() }?.joinToString(
-                separator = ", "
-            ) ?: "—"
+            val resources = holder.summaryContext.resources
+            val placeholder = resources.getString(R.string.summary_none_placeholder)
+            holder.summaryContext.text = data.summary.context.ifBlank { placeholder }
+            holder.summaryBullets.text = data.summary.bullets
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = "\n") { "• $it" }
+                ?: placeholder
+            holder.summaryActions.text = data.summary.actions
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = "\n") { "• $it" }
+                ?: placeholder
+            holder.summaryDecisions.text = data.summary.decisions
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = "\n") { "• $it" }
+                ?: placeholder
+            holder.summaryTopics.text = data.summary.topics
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = ", ")
+                ?: placeholder
+            holder.summaryKeywords.text = data.summary.keywords
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = ", ")
+                ?: placeholder
+            holder.summaryParticipants.text = data.summary.participants
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = "\n") { "• $it" }
+                ?: placeholder
+            holder.summaryTags.text = data.summary.tags
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = ", ")
+                ?: placeholder
+            holder.summarySentiments.text = data.summary.sentiments
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = "\n") { "• $it" }
+                ?: placeholder
+            holder.summaryCitations.text = data.summary.citations
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = "\n") { "• $it" }
+                ?: placeholder
+            holder.summaryTimings.text = data.summary.timings
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(separator = "\n") { "• $it" }
+                ?: placeholder
         }
     }
 
@@ -69,11 +99,18 @@ class DetailHeaderAdapter(
         val pauseButton: View = view.findViewById(R.id.pauseButton)
         val exportButton: View = view.findViewById(R.id.exportButton)
         val summaryStatus: TextView = view.findViewById(R.id.summaryStatus)
-        val summaryContent: LinearLayout = view.findViewById(R.id.summaryContent)
+        val summaryContent: View = view.findViewById(R.id.summaryContent)
         val summaryContext: TextView = view.findViewById(R.id.summaryContext)
         val summaryBullets: TextView = view.findViewById(R.id.summaryBullets)
+        val summaryActions: TextView = view.findViewById(R.id.summaryActions)
+        val summaryDecisions: TextView = view.findViewById(R.id.summaryDecisions)
         val summaryTopics: TextView = view.findViewById(R.id.summaryTopics)
         val summaryKeywords: TextView = view.findViewById(R.id.summaryKeywords)
+        val summaryParticipants: TextView = view.findViewById(R.id.summaryParticipants)
+        val summaryTags: TextView = view.findViewById(R.id.summaryTags)
+        val summarySentiments: TextView = view.findViewById(R.id.summarySentiments)
+        val summaryCitations: TextView = view.findViewById(R.id.summaryCitations)
+        val summaryTimings: TextView = view.findViewById(R.id.summaryTimings)
     }
 
     data class HeaderContent(
@@ -86,6 +123,13 @@ class DetailHeaderAdapter(
         val context: String,
         val bullets: List<String>,
         val topics: List<String>,
-        val keywords: List<String>
+        val keywords: List<String>,
+        val actions: List<String>,
+        val decisions: List<String>,
+        val participants: List<String>,
+        val tags: List<String>,
+        val sentiments: List<String>,
+        val citations: List<String>,
+        val timings: List<String>
     )
 }
