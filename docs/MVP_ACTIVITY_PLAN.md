@@ -1,0 +1,39 @@
+# MVP Delivery Plan
+
+This plan inventories the current implementation, the critical gaps to close for a testable MVP, and the follow-up items that can wait for a later phase.
+
+## 1. Capabilities already in place
+
+- **Foreground recording service** – the service spins up a foreground notification, captures 48 kHz PCM audio to WAV, persists the session in Room, and enqueues transcription work once the loop stops.【F:app/src/main/java/com/example/offlinehqasr/recorder/RecordService.kt†L44-L127】
+- **Automatic transcription pipeline (Vosk-first)** – `TranscribeWork` selects Whisper when available, otherwise Vosk, persists transcripts, segments, and triggers summarisation through Room.【F:app/src/main/java/com/example/offlinehqasr/recorder/TranscribeWork.kt†L18-L49】
+- **Vosk segmentation & parsing** – the current engine streams WAV data into Vosk, aggregates word ranges into segments with timestamps, and builds the transcript text.【F:app/src/main/java/com/example/offlinehqasr/recorder/VoskEngine.kt†L19-L91】
+- **Baseline summary integration** – the summariser produces a JSON payload (title, context, bullets, keywords/topics) stored alongside each recording and surfaced in the detail header.【F:app/src/main/java/com/example/offlinehqasr/summary/Summarizer.kt†L26-L47】【F:app/src/main/java/com/example/offlinehqasr/ui/DetailActivity.kt†L32-L88】
+- **Model import/export tooling** – the UI lets users import Vosk ZIPs or Whisper models via SAF, and export recordings to Markdown or JSON files.【F:app/src/main/java/com/example/offlinehqasr/ui/MainActivity.kt†L42-L120】【F:app/src/main/java/com/example/offlinehqasr/export/ExportUtils.kt†L15-L120】
+- **Room persistence & UI shell** – recordings, transcripts, summaries, and segments are stored in Room, displayed in the main list/detail screens, and playable via the integrated media player.【F:app/src/main/java/com/example/offlinehqasr/data/Entities.kt†L5-L43】【F:app/src/main/java/com/example/offlinehqasr/data/Dao.kt†L6-L45】【F:app/src/main/java/com/example/offlinehqasr/ui/MainActivity.kt†L49-L118】【F:app/src/main/java/com/example/offlinehqasr/ui/DetailActivity.kt†L21-L117】
+
+## 2. MVP-critical gaps & actions
+
+The requirements document sets the bar for the MVP; the items below are necessary before a public test in Android Studio.【F:docs/PRODUCT_REQUIREMENTS.md†L7-L93】
+
+| Area | Gap vs. requirement | MVP actions |
+| --- | --- | --- |
+| Audio capture & conditioning | Recording uses the built-in mic only, mono channel, and lacks the mandated normalisation/RNNoise/VAD pipeline or runtime detection of source failures.【F:app/src/main/java/com/example/offlinehqasr/recorder/RecordService.kt†L75-L127】【F:docs/PRODUCT_REQUIREMENTS.md†L21-L27】 | Implement adaptive source selection (wired/Bluetooth/internal), upgrade to stereo when available, insert gain normalisation + RNNoise (or equivalent), and surface flow interruptions to the UI in real time. |
+| Service lifecycle | `RecordService.start/stop` are thin wrappers without idempotency or state propagation back to the UI beyond a simple flag, which risks duplicate starts/stops during permission churn.【F:app/src/main/java/com/example/offlinehqasr/recorder/RecordService.kt†L44-L166】【F:app/src/main/java/com/example/offlinehqasr/ui/MainActivity.kt†L62-L104】 | Harden start/stop with explicit state machine, guard against concurrent invocations, broadcast status updates, and integrate notification permission results so the foreground requirement is always met. |
+| Transcription robustness | Long-form segmentation and recovery are minimal: Vosk runs on a single pass without chunking/retry and exceptions mostly fall through to failure without context, which conflicts with the SLA and resilience goals.【F:app/src/main/java/com/example/offlinehqasr/recorder/VoskEngine.kt†L19-L95】【F:app/src/main/java/com/example/offlinehqasr/recorder/TranscribeWork.kt†L23-L49】【F:docs/PRODUCT_REQUIREMENTS.md†L28-L34】 | Add windowed decoding with context carry-over, explicit handling of corrupt/missing models, structured retry paths, duration accounting, and telemetry hooks for manual WER checks. |
+| Structured summary | The current JSON omits mandatory fields (actions, decisions, participants, sentiments, timings, etc.) and relies on heuristics instead of an on-device LLM as required.【F:app/src/main/java/com/example/offlinehqasr/summary/Summarizer.kt†L26-L47】【F:docs/PRODUCT_REQUIREMENTS.md†L35-L38】 | Integrate the chosen local LLM (3–4B) or an equivalent deterministic pipeline, enforce the full schema, and provide a fallback warning when the model is unavailable. |
+| Secure storage | Audio files, database, and exports are stored in clear text without AES-GCM or SQLCipher, violating security constraints.【F:app/src/main/java/com/example/offlinehqasr/recorder/RecordService.kt†L89-L123】【F:app/src/main/java/com/example/offlinehqasr/data/AppDb.kt†L11-L25】【F:docs/PRODUCT_REQUIREMENTS.md†L49-L54】 | Generate non-exportable keys via Keystore, wrap WAV IO and exports in AES-GCM streams, migrate Room to SQLCipher (or equivalent), and persist IV/metadata for replays and wipes. |
+| Search & filters | Room schema lacks any FTS table or DAO search methods, preventing the mandated relevance ranking and filters by tags/participants.【F:app/src/main/java/com/example/offlinehqasr/data/AppDb.kt†L11-L25】【F:app/src/main/java/com/example/offlinehqasr/data/Dao.kt†L6-L45】【F:docs/PRODUCT_REQUIREMENTS.md†L42-L47】 | Introduce an FTS5 shadow table synchronised with transcripts/segments, expose MATCH queries, and wire the UI filters (date/duration/tags/participants) to the new DAO methods. |
+| Model import UX & validation | Imports succeed silently but lack integrity checks, progress feedback, or post-import validation, and WorkManager errors aren’t surfaced to the user, reducing reliability expectations.【F:app/src/main/java/com/example/offlinehqasr/ui/MainActivity.kt†L80-L120】【F:app/src/main/java/com/example/offlinehqasr/recorder/TranscribeWork.kt†L30-L49】【F:docs/PRODUCT_REQUIREMENTS.md†L56-L67】 | Add hash/structure validation after unzip/copy, present progress and completion states, capture WorkManager failures (missing models, storage), and expose them through notifications or the status area. |
+| Testing coverage | The repository lacks scripted manual/automated scenarios for the failure cases enumerated in the requirements (loss of permission, BT toggles, low battery, corrupt audio).【F:docs/PRODUCT_REQUIREMENTS.md†L63-L68】 | Extend TESTING.md with concrete manual/automated suites and implement instrumentation/unit tests that cover the identified edge cases. |
+
+## 3. Phase 2+ backlog
+
+The following improvements align with the roadmap but are not blocking the MVP release:
+
+- **Enhanced background resilience** – smarter throttling, doze-aware capture, and thermal-aware scheduling beyond the MVP guardrails.【F:docs/PRODUCT_REQUIREMENTS.md†L10-L19】
+- **Whisper JNI integration** – replace Vosk with whisper.cpp GGUF models (large-v3/medium) once the native layer and memory heuristics are in place.【F:docs/PRODUCT_REQUIREMENTS.md†L16-L18】【F:app/src/main/java/com/example/offlinehqasr/recorder/TranscribeWork.kt†L30-L49】
+- **Advanced LLM outputs** – chapter breakdowns, participant attribution, entity graphs, and sentiment deep-dives using larger local models.【F:docs/PRODUCT_REQUIREMENTS.md†L35-L40】
+- **Multilingual expansion & translation** – extend beyond FR/EN once the baseline is stable.【F:docs/PRODUCT_REQUIREMENTS.md†L31-L32】
+- **Audit trail & secure sharing** – tamper-evident logs, encrypted sharing flows, and adapters for third-party offline storage (Nextcloud, exports métiers).【F:docs/PRODUCT_REQUIREMENTS.md†L49-L55】【F:docs/PRODUCT_REQUIREMENTS.md†L77-L82】
+- **UI refinements** – thematic grouping, project workspaces, richer status dashboards, and accessibility polishing after MVP feedback.【F:docs/PRODUCT_REQUIREMENTS.md†L42-L47】
+
