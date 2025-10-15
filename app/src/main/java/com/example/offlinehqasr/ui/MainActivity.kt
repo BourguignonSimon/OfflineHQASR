@@ -92,6 +92,7 @@ class MainActivity : AppCompatActivity() {
         updateStatus()
         refreshList()
         syncRecordingState()
+        registerMicrophoneStatusReceiver()
     }
 
     override fun onStart() {
@@ -120,6 +121,18 @@ class MainActivity : AppCompatActivity() {
         syncRecordingState()
         refreshList()
         updateStatus()
+    }
+
+    override fun onDestroy() {
+        if (microphoneReceiverRegistered) {
+            try {
+                unregisterReceiver(microphoneStatusReceiver)
+            } catch (_: IllegalArgumentException) {
+            }
+            microphoneReceiverRegistered = false
+        }
+        binding.microphoneBanner.removeCallbacks(hideBannerRunnable)
+        super.onDestroy()
     }
 
     private fun updateStatus() {
@@ -346,5 +359,58 @@ class MainActivity : AppCompatActivity() {
         if (!dir.exists()) return getString(R.string.model_status_missing)
         val children = dir.listFiles()
         return if (children.isNullOrEmpty()) getString(R.string.model_status_incomplete) else getString(R.string.model_status_ready)
+    }
+
+    private fun registerMicrophoneStatusReceiver() {
+        if (microphoneReceiverRegistered) return
+        val filter = IntentFilter(RecordService.ACTION_MICROPHONE_STATUS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(microphoneStatusReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(microphoneStatusReceiver, filter)
+        }
+        microphoneReceiverRegistered = true
+    }
+
+    private fun handleMicrophoneStatus(status: String, message: String?) {
+        binding.microphoneBanner.removeCallbacks(hideBannerRunnable)
+        when (status) {
+            RecordService.STATUS_OK -> {
+                if (!message.isNullOrBlank()) {
+                    showMicrophoneBanner(
+                        getString(R.string.microphone_status_source, message),
+                        R.attr.colorSecondaryContainer,
+                        R.attr.colorOnSecondaryContainer
+                    )
+                    binding.microphoneBanner.postDelayed(hideBannerRunnable, 2_000)
+                } else {
+                    binding.microphoneBanner.isVisible = false
+                }
+            }
+            RecordService.STATUS_WARNING -> {
+                showMicrophoneBanner(
+                    getString(R.string.microphone_status_warning),
+                    R.attr.colorTertiaryContainer,
+                    R.attr.colorOnTertiaryContainer
+                )
+            }
+            RecordService.STATUS_ERROR -> {
+                val text = getString(R.string.microphone_status_error, message ?: "?")
+                showMicrophoneBanner(text, R.attr.colorErrorContainer, R.attr.colorOnErrorContainer)
+            }
+            RecordService.STATUS_IDLE -> {
+                binding.microphoneBanner.isVisible = false
+            }
+        }
+    }
+
+    private fun showMicrophoneBanner(text: String, backgroundAttr: Int, foregroundAttr: Int) {
+        val background = MaterialColors.getColor(binding.root, backgroundAttr)
+        val foreground = MaterialColors.getColor(binding.root, foregroundAttr)
+        binding.microphoneBanner.setCardBackgroundColor(background)
+        binding.microphoneBannerText.setTextColor(foreground)
+        binding.microphoneBannerText.text = text
+        binding.microphoneBanner.isVisible = true
     }
 }

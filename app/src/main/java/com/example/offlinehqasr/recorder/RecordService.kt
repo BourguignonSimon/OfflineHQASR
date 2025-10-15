@@ -28,6 +28,7 @@ import com.example.offlinehqasr.security.EncryptionMetadata
 import com.example.offlinehqasr.security.SecureFileUtils
 import com.example.offlinehqasr.ui.MainActivity
 import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
@@ -51,7 +52,10 @@ class RecordService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
-        running.set(true)
+        if (!running.compareAndSet(false, true)) {
+            Log.w(TAG, "RecordService already running")
+            return START_STICKY
+        }
         job = serviceScope.launch { recordLoop() }
         return START_NOT_STICKY
     }
@@ -59,6 +63,7 @@ class RecordService : Service() {
     override fun onDestroy() {
         job?.cancel()
         running.set(false)
+        broadcastMicrophoneStatus(STATUS_IDLE, null)
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -83,7 +88,7 @@ class RecordService : Service() {
     private suspend fun recordLoop() {
         try {
             val sampleRate = 48_000
-            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val selection = AudioDeviceSelector.select(this)
             val encoding = AudioFormat.ENCODING_PCM_16BIT
             val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, encoding)
             require(minBuf > 0) { "Invalid buffer size reported by AudioRecord" }
@@ -167,6 +172,7 @@ class RecordService : Service() {
                     } finally {
                         cipherStream.close()
                     }
+
                     recorder.stop()
                     // Fix header sizes
                     RandomAccessFile(outFile, "rw").use { raf ->
@@ -184,6 +190,8 @@ class RecordService : Service() {
                 }
                 throw e
             } finally {
+                runCatching { noiseSuppressor?.release() }
+                runCatching { agc?.release() }
                 recorder.release()
             }
 
@@ -193,7 +201,6 @@ class RecordService : Service() {
                 Recording(0, outFile.absolutePath, System.currentTimeMillis(), duration)
             )
 
-            // Enqueue transcription work
             TranscribeWork.enqueue(this, recId, outFile.absolutePath)
         } catch (e: SecurityException) {
             Log.e(TAG, "Recording permission revoked", e)
@@ -202,13 +209,16 @@ class RecordService : Service() {
             Log.e(TAG, "Recording failed", e)
             notifyRecordingError(ERROR_UNKNOWN)
         } finally {
+            running.set(false)
+            broadcastMicrophoneStatus(STATUS_IDLE, null)
             stopSelf()
         }
     }
 
-    private fun writeWavHeader(stream: java.io.OutputStream, channels: Int, sampleRate: Int, bits: Int, dataLen: Int) {
+    private fun writeWavHeader(stream: java.io.OutputStream, channels: Int, sampleRate: Int, bits: Int, dataLen: Long) {
         val byteRate = sampleRate * channels * bits / 8
-        val totalDataLen = dataLen + 36
+        val safeDataLen = dataLen.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val totalDataLen = safeDataLen + 36
         val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
         header.put("RIFF".toByteArray())
         header.putInt(totalDataLen)
@@ -222,7 +232,7 @@ class RecordService : Service() {
         header.putShort((channels * bits / 8).toShort())
         header.putShort(bits.toShort())
         header.put("data".toByteArray())
-        header.putInt(dataLen)
+        header.putInt(safeDataLen)
         stream.write(header.array(), 0, 44)
     }
 
@@ -265,5 +275,13 @@ class RecordService : Service() {
         }
 
         fun isRunning(): Boolean = running.get()
+    }
+
+    private fun broadcastMicrophoneStatus(status: String, label: String?) {
+        val intent = Intent(ACTION_MICROPHONE_STATUS).apply {
+            putExtra(EXTRA_STATUS, status)
+            putExtra(EXTRA_MESSAGE, label)
+        }
+        sendBroadcast(intent)
     }
 }
