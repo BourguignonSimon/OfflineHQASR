@@ -4,10 +4,13 @@ import android.content.Context
 import android.util.Log
 import androidx.work.*
 import com.example.offlinehqasr.data.AppDb
+import com.example.offlinehqasr.data.entities.TranscriptFts
 import com.example.offlinehqasr.summary.Summarizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import org.json.JSONArray
+import org.json.JSONObject
 
 class TranscribeWork(appContext: Context, params: WorkerParameters): CoroutineWorker(appContext, params) {
 
@@ -57,18 +60,87 @@ class TranscribeWork(appContext: Context, params: WorkerParameters): CoroutineWo
     }
 
     private fun persistResult(db: AppDb, recordingId: Long, result: TranscriptionResult) {
-        val existingTranscript = db.transcriptDao().getByRecording(recordingId)
-        db.transcriptDao().insert(
-            result.toTranscript(recordingId).copy(id = existingTranscript?.id ?: 0)
-        )
-        db.segmentDao().deleteByRecording(recordingId)
-        db.segmentDao().insertAll(result.segments.map { it.copy(recordingId = recordingId) })
+        db.runInTransaction {
+            val transcriptDao = db.transcriptDao()
+            val segmentDao = db.segmentDao()
+            val summaryDao = db.summaryDao()
+            val searchDao = db.transcriptSearchDao()
 
-        val summary = Summarizer.summarizeToJson(result.text, result.durationMs)
-        val existingSummary = db.summaryDao().getByRecording(recordingId)
-        db.summaryDao().insert(summary.copy(id = existingSummary?.id ?: 0, recordingId = recordingId))
+            val existingTranscript = transcriptDao.getByRecording(recordingId)
+            val transcript = result.toTranscript(recordingId).copy(id = existingTranscript?.id ?: 0)
+            transcriptDao.insert(transcript)
+
+            segmentDao.deleteByRecording(recordingId)
+            segmentDao.insertAll(result.segments.map { it.copy(recordingId = recordingId) })
+
+            val summary = Summarizer.summarizeToJson(result.text, result.durationMs)
+            val existingSummary = summaryDao.getByRecording(recordingId)
+            val summaryEntity = summary.copy(id = existingSummary?.id ?: 0, recordingId = recordingId)
+            summaryDao.insert(summaryEntity)
+
+            val metadata = extractSummaryMetadata(summaryEntity.json)
+            val keywords = (metadata.keywords + metadata.topics).map { it.trim() }.filter { it.isNotEmpty() }
+            val segmentsText = result.segments
+                .map { it.text.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(separator = "\n")
+            val tags = metadata.tags.map { it.trim() }.filter { it.isNotEmpty() }
+            val participants = metadata.participants.map { it.trim() }.filter { it.isNotEmpty() }
+
+            searchDao.deleteByRecording(recordingId)
+            searchDao.insert(
+                TranscriptFts(
+                    recordingId = recordingId,
+                    transcript = result.text.trim(),
+                    segments = segmentsText,
+                    keywords = keywords.joinToString(separator = "\n"),
+                    tags = tags.joinToString(separator = "\n"),
+                    participants = participants.joinToString(separator = "\n")
+                )
+            )
+        }
     }
     private companion object {
         const val TAG = "TranscribeWork"
+    }
+
+    private data class SummaryMetadata(
+        val keywords: List<String>,
+        val tags: List<String>,
+        val participants: List<String>,
+        val topics: List<String>
+    )
+
+    private fun extractSummaryMetadata(json: String?): SummaryMetadata {
+        if (json.isNullOrBlank()) {
+            return SummaryMetadata(emptyList(), emptyList(), emptyList(), emptyList())
+        }
+        return runCatching {
+            val root = JSONObject(json)
+            val keywords = root.optJSONArray("keywords").toStringList()
+            val tags = root.optJSONArray("tags").toStringList()
+            val topics = root.optJSONArray("topics").toStringList()
+            val participants = mutableSetOf<String>()
+            participants.addAll(root.optJSONArray("participants").toStringList())
+            val actions = root.optJSONArray("actions")
+            if (actions != null) {
+                for (i in 0 until actions.length()) {
+                    val who = actions.optJSONObject(i)?.optString("who")?.trim()
+                    if (!who.isNullOrEmpty()) {
+                        participants.add(who)
+                    }
+                }
+            }
+            SummaryMetadata(keywords, tags, participants.toList(), topics)
+        }.getOrDefault(SummaryMetadata(emptyList(), emptyList(), emptyList(), emptyList()))
+    }
+
+    private fun JSONArray?.toStringList(): List<String> {
+        if (this == null) return emptyList()
+        val values = mutableListOf<String>()
+        for (i in 0 until length()) {
+            optString(i)?.trim()?.takeIf { it.isNotEmpty() }?.let { values.add(it) }
+        }
+        return values
     }
 }

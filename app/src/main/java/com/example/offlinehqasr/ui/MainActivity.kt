@@ -14,16 +14,22 @@ import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
+import androidx.core.widget.doOnTextChanged
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.offlinehqasr.R
 import com.example.offlinehqasr.data.AppDb
-import com.example.offlinehqasr.data.entities.Recording
 import com.example.offlinehqasr.databinding.ActivityMainBinding
 import com.example.offlinehqasr.export.ExportUtils
 import com.example.offlinehqasr.recorder.RecordService
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -32,6 +38,10 @@ class MainActivity : AppCompatActivity() {
     private var isRecording = false
     private var errorBannerVisible = false
     private var errorReceiverRegistered = false
+    private lateinit var adapter: RecordingAdapter
+    private val selectedTags = mutableSetOf<String>()
+    private val selectedParticipants = mutableSetOf<String>()
+    private var searchJob: Job? = null
 
     private val audioPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -54,6 +64,14 @@ class MainActivity : AppCompatActivity() {
 
         setSupportActionBar(binding.toolbar)
         binding.recordingsList.layoutManager = LinearLayoutManager(this)
+        adapter = RecordingAdapter { rec ->
+            val i = Intent(this@MainActivity, DetailActivity::class.java)
+            i.putExtra("recordingId", rec.id)
+            startActivity(i)
+        }
+        binding.recordingsList.adapter = adapter
+
+        binding.searchInput.doOnTextChanged { _, _, _, _ -> scheduleSearch() }
 
         binding.errorBannerClose.setOnClickListener { hideRecordingError() }
 
@@ -111,18 +129,109 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshList() {
-        val dao = AppDb.get(this).recordingDao()
+        refreshFilters { performSearch() }
+    }
+
+    private fun refreshFilters(onComplete: (() -> Unit)? = null) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val items = dao.getAll()
+            val db = AppDb.get(this@MainActivity)
+            val searchDao = db.transcriptSearchDao()
+            val tags = parseFilterValues(searchDao.getAllTagsRaw())
+            val participants = parseFilterValues(searchDao.getAllParticipantsRaw())
             launch(Dispatchers.Main) {
-                binding.recordingsList.adapter = RecordingAdapter(items) { rec ->
-                    val i = Intent(this@MainActivity, DetailActivity::class.java)
-                    i.putExtra("recordingId", rec.id)
-                    startActivity(i)
-                }
+                updateChipGroup(binding.tagChipGroup, binding.tagFiltersLabel, tags, selectedTags)
+                updateChipGroup(binding.participantChipGroup, binding.participantFiltersLabel, participants, selectedParticipants)
+                onComplete?.invoke()
             }
         }
     }
+
+    private fun performSearch() {
+        val queryText = binding.searchInput.text?.toString().orEmpty()
+        val tags = selectedTags.toSet()
+        val participants = selectedParticipants.toSet()
+        lifecycleScope.launch {
+            val items = withContext(Dispatchers.IO) {
+                val db = AppDb.get(this@MainActivity)
+                val match = buildMatchQuery(queryText, tags, participants)
+                if (match == null) {
+                    db.recordingDao().getAll().map { RecordingListItem(it, null) }
+                } else {
+                    db.transcriptSearchDao().searchRecordings(match).map { row ->
+                        val snippet = row.snippet
+                            ?.replace('\n', ' ')
+                            ?.replace(Regex("\\s+"), " ")
+                            ?.trim()
+                        RecordingListItem(row.recording, snippet)
+                    }
+                }
+            }
+            adapter.submit(items)
+        }
+    }
+
+    private fun scheduleSearch() {
+        searchJob?.cancel()
+        searchJob = lifecycleScope.launch {
+            delay(200)
+            performSearch()
+        }
+    }
+
+    private fun parseFilterValues(raw: List<String>): List<String> {
+        return raw.asSequence()
+            .flatMap { it.splitToSequence('\n') }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sorted()
+            .toList()
+    }
+
+    private fun updateChipGroup(group: ChipGroup, label: View, values: List<String>, selected: MutableSet<String>) {
+        val allowed = values.toSet()
+        val removed = selected.filterNot { it in allowed }
+        if (removed.isNotEmpty()) {
+            selected.removeAll(removed)
+        }
+        group.removeAllViews()
+        val hasValues = values.isNotEmpty()
+        label.isVisible = hasValues
+        group.isVisible = hasValues
+        if (!hasValues) return
+        values.forEach { value ->
+            val chip = Chip(this).apply {
+                text = value
+                isCheckable = true
+                isChecked = selected.contains(value)
+            }
+            chip.setOnCheckedChangeListener { _, isChecked ->
+                if (isChecked) {
+                    selected.add(value)
+                } else {
+                    selected.remove(value)
+                }
+                performSearch()
+            }
+            group.addView(chip)
+        }
+    }
+
+    private fun buildMatchQuery(text: String, tags: Set<String>, participants: Set<String>): String? {
+        val clauses = mutableListOf<String>()
+        val tokens = text.trim().split(Regex("\\s+")).mapNotNull {
+            val cleaned = it.trim()
+            if (cleaned.isEmpty()) null else "\"${ftsEscape(cleaned)}\""
+        }
+        if (tokens.isNotEmpty()) {
+            clauses.add(tokens.joinToString(separator = " "))
+        }
+        tags.forEach { value -> clauses.add("tags:\"${ftsEscape(value)}\"") }
+        participants.forEach { value -> clauses.add("participants:\"${ftsEscape(value)}\"") }
+        return if (clauses.isEmpty()) null else clauses.joinToString(separator = " AND ")
+    }
+
+    private fun ftsEscape(raw: String): String = raw.replace("\"", "\"\"")
 
     private fun startRecording() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
