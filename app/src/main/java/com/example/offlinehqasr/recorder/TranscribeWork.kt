@@ -1,6 +1,7 @@
 package com.example.offlinehqasr.recorder
 
 import android.content.Context
+import android.util.Log
 import androidx.work.*
 import com.example.offlinehqasr.data.AppDb
 import com.example.offlinehqasr.summary.Summarizer
@@ -16,24 +17,14 @@ class TranscribeWork(appContext: Context, params: WorkerParameters): CoroutineWo
         val path = inputData.getString("path") ?: return@withContext Result.failure()
         val db = AppDb.get(applicationContext)
 
-        val engine = selectEngine()
         try {
-            val result = engine.transcribeFile(path)
+            val result = transcribeWithPreferredEngine(path)
             persistResult(db, recordingId, result)
             Result.success()
         } catch (e: IOException) {
             Result.retry()
         } catch (e: IllegalStateException) {
             Result.failure()
-        } catch (e: UnsupportedOperationException) {
-            return@withContext if (engine is WhisperEngine) {
-                val fallback = VoskEngine(applicationContext)
-                val result = fallback.transcribeFile(path)
-                persistResult(db, recordingId, result)
-                Result.success()
-            } else {
-                Result.failure()
-            }
         } catch (e: Exception) {
             Result.failure()
         }
@@ -43,17 +34,26 @@ class TranscribeWork(appContext: Context, params: WorkerParameters): CoroutineWo
         fun enqueue(ctx: Context, recordingId: Long, path: String) {
             val req = OneTimeWorkRequestBuilder<TranscribeWork>()
                 .setInputData(Data.Builder().putLong("recordingId", recordingId).putString("path", path).build())
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORKER)
                 .build()
             WorkManager.getInstance(ctx).enqueue(req)
         }
     }
 
-    private fun selectEngine(): SpeechToTextEngine {
-        return if (WhisperEngine.isAvailable(applicationContext)) {
-            WhisperEngine(applicationContext)
-        } else {
-            VoskEngine(applicationContext)
+    private fun transcribeWithPreferredEngine(path: String): TranscriptionResult {
+        if (WhisperEngine.isAvailable(applicationContext)) {
+            try {
+                val whisper = WhisperEngine(applicationContext)
+                return whisper.transcribeFile(path)
+            } catch (e: WhisperEngine.WhisperUnavailableException) {
+                Log.w(TAG, "Modèle Whisper indisponible, bascule sur Vosk", e)
+            } catch (e: OutOfMemoryError) {
+                Log.e(TAG, "Mémoire insuffisante pour Whisper, bascule sur Vosk", e)
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "Bibliothèque native Whisper manquante", e)
+            }
         }
+        return VoskEngine(applicationContext).transcribeFile(path)
     }
 
     private fun persistResult(db: AppDb, recordingId: Long, result: TranscriptionResult) {
@@ -67,5 +67,8 @@ class TranscribeWork(appContext: Context, params: WorkerParameters): CoroutineWo
         val summary = Summarizer.summarizeToJson(result.text, result.durationMs)
         val existingSummary = db.summaryDao().getByRecording(recordingId)
         db.summaryDao().insert(summary.copy(id = existingSummary?.id ?: 0, recordingId = recordingId))
+    }
+    private companion object {
+        const val TAG = "TranscribeWork"
     }
 }
