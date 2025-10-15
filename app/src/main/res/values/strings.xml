@@ -35,4 +35,7 @@
     <string name="microphone_error_bad_value">Flux audio invalide. Relancez l\'enregistrement.</string>
     <string name="microphone_error_disconnected">Périphérique micro déconnecté.</string>
     <string name="microphone_error_unknown">Erreur micro inconnue.</string>
+    <string name="search_hint">Recherche transcription, mots-clés…</string>
+    <string name="filter_tags_label">Tags</string>
+    <string name="filter_participants_label">Participants</string>
 </resources>

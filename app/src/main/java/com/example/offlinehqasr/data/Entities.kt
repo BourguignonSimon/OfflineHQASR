@@ -2,6 +2,17 @@ package com.example.offlinehqasr.data.entities
 
 import androidx.room.*
 
+@Fts5
+@Entity(tableName = "transcript_fts")
+data class TranscriptFts(
+    val recordingId: Long,
+    val transcript: String,
+    val segments: String,
+    val keywords: String,
+    val tags: String,
+    val participants: String
+)
+
 @Entity(tableName = "recordings")
 data class Recording(
     @PrimaryKey(autoGenerate = true) val id: Long,

@@ -8,29 +8,48 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.offlinehqasr.R
 import com.example.offlinehqasr.data.entities.Recording
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
-class RecordingAdapter(private val items: List<Recording>, private val onClick: (Recording) -> Unit)
-    : RecyclerView.Adapter<RecordingAdapter.VH>() {
+class RecordingAdapter(private val onClick: (Recording) -> Unit) : RecyclerView.Adapter<RecordingAdapter.VH>() {
 
-    class VH(v: View): RecyclerView.ViewHolder(v) {
-        val title: TextView = v.findViewById(android.R.id.text1)
-        val sub: TextView = v.findViewById(android.R.id.text2)
+    private val items = mutableListOf<RecordingListItem>()
+
+    fun submit(newItems: List<RecordingListItem>) {
+        items.clear()
+        items.addAll(newItems)
+        notifyDataSetChanged()
+    }
+
+    class VH(v: View) : RecyclerView.ViewHolder(v) {
+        val title: TextView = v.findViewById(R.id.recordingTitle)
+        val meta: TextView = v.findViewById(R.id.recordingMeta)
+        val snippet: TextView = v.findViewById(R.id.recordingSnippet)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val v = LayoutInflater.from(parent.context).inflate(android.R.layout.simple_list_item_2, parent, false)
+        val v = LayoutInflater.from(parent.context).inflate(R.layout.item_recording, parent, false)
         return VH(v)
     }
 
     override fun getItemCount(): Int = items.size
 
     override fun onBindViewHolder(holder: VH, position: Int) {
-        val it = items[position]
-        holder.title.text = it.filePath.substringAfterLast('/')
+        val item = items[position]
+        val recording = item.recording
+        holder.title.text = recording.filePath.substringAfterLast('/')
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-        holder.sub.text = sdf.format(Date(it.createdAt)) + " • " + formatDuration(it.durationMs)
-        holder.itemView.setOnClickListener { onClick(it) }
+        val meta = sdf.format(Date(recording.createdAt)) + " • " + formatDuration(recording.durationMs)
+        holder.meta.text = meta
+        val snippetText = item.snippet?.takeIf { it.isNotBlank() }
+        if (snippetText != null) {
+            holder.snippet.visibility = View.VISIBLE
+            holder.snippet.text = snippetText
+        } else {
+            holder.snippet.visibility = View.GONE
+            holder.snippet.text = ""
+        }
+        holder.itemView.setOnClickListener { onClick(recording) }
     }
 
     private fun formatDuration(durationMs: Long): String {
