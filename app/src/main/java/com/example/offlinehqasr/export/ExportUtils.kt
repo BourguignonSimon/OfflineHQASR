@@ -5,6 +5,10 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.example.offlinehqasr.data.AppDb
+import com.example.offlinehqasr.security.AesGcmCipher
+import com.example.offlinehqasr.security.AppKeystore
+import com.example.offlinehqasr.security.EncryptionMetadata
+import com.example.offlinehqasr.security.SecureFileUtils
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -51,17 +55,31 @@ object ExportUtils {
         val db = AppDb.get(ctx)
         val recs = db.recordingDao().getAll()
         val zipFile = File(outDir, "export_markdown_${System.currentTimeMillis()}.zip")
-        val zos = java.util.zip.ZipOutputStream(FileOutputStream(zipFile))
+        SecureFileUtils.clearMetadata(zipFile)
+        var metadata: EncryptionMetadata? = null
+        var encryptionCompleted = false
         try {
-            for (r in recs) {
-                val md = toMarkdown(ctx, r.id)
-                val entry = java.util.zip.ZipEntry(File(r.filePath).nameWithoutExtension + ".md")
-                zos.putNextEntry(entry)
-                zos.write(md.toByteArray(Charsets.UTF_8))
-                zos.closeEntry()
+            FileOutputStream(zipFile).use { fos ->
+                val encrypting = AesGcmCipher.wrapForEncryption(AppKeystore.EXPORT_KEY_ALIAS, fos)
+                metadata = encrypting.metadata
+                java.util.zip.ZipOutputStream(encrypting.stream).use { zos ->
+                    for (r in recs) {
+                        val md = toMarkdown(ctx, r.id)
+                        val entry = java.util.zip.ZipEntry(File(r.filePath).nameWithoutExtension + ".md")
+                        zos.putNextEntry(entry)
+                        zos.write(md.toByteArray(Charsets.UTF_8))
+                        zos.closeEntry()
+                    }
+                }
+            }
+            metadata?.let {
+                SecureFileUtils.persistMetadata(zipFile, it)
+                encryptionCompleted = true
             }
         } finally {
-            zos.close()
+            if (!encryptionCompleted) {
+                SecureFileUtils.clearMetadata(zipFile)
+            }
         }
         return zipFile.absolutePath
     }
@@ -91,7 +109,27 @@ object ExportUtils {
         root.put("segments", segArr)
 
         val out = File(outDir, File(rec.filePath).nameWithoutExtension + ".json")
-        out.writeText(root.toString(2), Charsets.UTF_8)
+        SecureFileUtils.clearMetadata(out)
+        var metadata: EncryptionMetadata? = null
+        var encryptionCompleted = false
+        val payload = root.toString(2).toByteArray(Charsets.UTF_8)
+        try {
+            FileOutputStream(out).use { fos ->
+                val encrypting = AesGcmCipher.wrapForEncryption(AppKeystore.EXPORT_KEY_ALIAS, fos)
+                metadata = encrypting.metadata
+                encrypting.stream.use { cos ->
+                    cos.write(payload)
+                }
+            }
+            metadata?.let {
+                SecureFileUtils.persistMetadata(out, it)
+                encryptionCompleted = true
+            }
+        } finally {
+            if (!encryptionCompleted) {
+                SecureFileUtils.clearMetadata(out)
+            }
+        }
         return out.absolutePath
     }
 

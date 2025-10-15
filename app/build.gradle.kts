@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
+val useWhisperJni = project.findProperty("useWhisperJni")?.toString()?.toBoolean() ?: false
+
 android {
     namespace = "com.example.offlinehqasr"
     compileSdk = 35
@@ -18,7 +20,15 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
-        buildConfigField("boolean", "USE_WHISPER", "false")
+        buildConfigField("boolean", "USE_WHISPER", if (useWhisperJni) "true" else "false")
+
+        if (useWhisperJni) {
+            externalNativeBuild {
+                cmake {
+                    arguments += listOf("-DWHISPER_STUB=ON")
+                }
+            }
+        }
     }
 
     buildTypes {
@@ -39,15 +49,21 @@ android {
 
     buildFeatures {
         viewBinding = true
-		buildConfig = true
+        buildConfig = true
     }
 
     kotlinOptions {
         jvmTarget = "17"
     }
-}
 
-val useWhisperJni = project.findProperty("useWhisperJni")?.toString()?.toBoolean() ?: false
+    if (useWhisperJni) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+            }
+        }
+    }
+}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
@@ -59,6 +75,10 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
+
+    // SQLCipher for Room
+    implementation("net.zetetic:android-database-sqlcipher:4.5.6")
+    implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
@@ -78,4 +98,5 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+    androidTestImplementation("androidx.test:core-ktx:1.5.0")
 }

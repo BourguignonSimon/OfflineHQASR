@@ -26,9 +26,23 @@
     <string name="summary_topics_label">Sujets</string>
     <string name="summary_keywords_label">Mots-clés</string>
     <string name="summary_actions_label">Actions</string>
+    <string name="summary_decisions_label">Décisions</string>
+    <string name="summary_participants_label">Participants</string>
+    <string name="summary_tags_label">Tags</string>
+    <string name="summary_sentiments_label">Sentiments</string>
+    <string name="summary_citations_label">Citations</string>
+    <string name="summary_timings_label">Chronologie</string>
+    <string name="summary_none_placeholder">—</string>
     <string name="export_json_success">JSON: %1$s</string>
-    <string name="microphone_status_idle">Micro inactif</string>
-    <string name="microphone_status_source">Micro: %1$s</string>
-    <string name="microphone_status_warning">Flux audio faible détecté. Vérifiez la connexion ou rapprochez-vous de la source.</string>
-    <string name="microphone_status_error">Flux audio interrompu (%1$s).</string>
+    <string name="microphone_error_placeholder">Micro désactivé.</string>
+    <string name="microphone_error_icon">Alerte micro</string>
+    <string name="microphone_error_dismiss">Masquer l\'alerte</string>
+    <string name="microphone_error_permission">Autorisation micro perdue. Merci de la réactiver.</string>
+    <string name="microphone_error_invalid_operation">Le micro a été pris par une autre application.</string>
+    <string name="microphone_error_bad_value">Flux audio invalide. Relancez l\'enregistrement.</string>
+    <string name="microphone_error_disconnected">Périphérique micro déconnecté.</string>
+    <string name="microphone_error_unknown">Erreur micro inconnue.</string>
+    <string name="search_hint">Recherche transcription, mots-clés…</string>
+    <string name="filter_tags_label">Tags</string>
+    <string name="filter_participants_label">Participants</string>
 </resources>

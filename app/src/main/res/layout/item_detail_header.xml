@@ -118,6 +118,36 @@
                     android:paddingBottom="4dp" />
 
                 <TextView
+                    android:id="@+id/summaryActionsLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/summary_actions_label"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                    android:paddingTop="4dp" />
+
+                <TextView
+                    android:id="@+id/summaryActions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                    android:paddingBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/summaryDecisionsLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/summary_decisions_label"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                    android:paddingTop="4dp" />
+
+                <TextView
+                    android:id="@+id/summaryDecisions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                    android:paddingBottom="4dp" />
+
+                <TextView
                     android:id="@+id/summaryTopicsLabel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -141,6 +171,76 @@
 
                 <TextView
                     android:id="@+id/summaryKeywords"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <TextView
+                    android:id="@+id/summaryParticipantsLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/summary_participants_label"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                    android:paddingTop="4dp" />
+
+                <TextView
+                    android:id="@+id/summaryParticipants"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <TextView
+                    android:id="@+id/summaryTagsLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/summary_tags_label"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                    android:paddingTop="4dp" />
+
+                <TextView
+                    android:id="@+id/summaryTags"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <TextView
+                    android:id="@+id/summarySentimentsLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/summary_sentiments_label"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                    android:paddingTop="4dp" />
+
+                <TextView
+                    android:id="@+id/summarySentiments"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <TextView
+                    android:id="@+id/summaryCitationsLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/summary_citations_label"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                    android:paddingTop="4dp" />
+
+                <TextView
+                    android:id="@+id/summaryCitations"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+                <TextView
+                    android:id="@+id/summaryTimingsLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/summary_timings_label"
+                    android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                    android:paddingTop="4dp" />
+
+                <TextView
+                    android:id="@+id/summaryTimings"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />

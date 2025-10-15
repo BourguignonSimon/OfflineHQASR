@@ -18,6 +18,11 @@ Application Android native 100% offline pour enregistrer, transcrire (Vosk par d
 - Modèles: `files/models/vosk` et `files/models/whisper`
 - Exports: `files/exports/*.zip|*.json`
 
+## Sécurité & chiffrement
+- Les enregistrements WAV sont chiffrés en continu via AES-GCM avec une clé non exportable du Keystore Android. Les métadonnées (`*.wav.meta`) contiennent l'IV nécessaire et doivent être conservées avec chaque fichier.
+- La base `app.db` (transcripts, résumés, segments) est protégée par SQLCipher avec un mot de passe stocké uniquement chiffré dans l'espace privé de l'application.
+- Les exports Markdown/JSON sont générés sur un flux chiffré AES-GCM. Pour toute sauvegarde manuelle, conserver le couple fichier + `.meta` associé afin de permettre la ré-importation par l'application.
+
 ## Whisper (optionnel)
 - Voir `whisper/README.md`. Possibilité d’activer via `-PuseWhisperJni=true` et `BuildConfig.USE_WHISPER`.
 

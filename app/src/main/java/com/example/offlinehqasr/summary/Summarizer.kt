@@ -1,66 +1,98 @@
 package com.example.offlinehqasr.summary
 
-import org.json.JSONArray
-import org.json.JSONObject
-import kotlin.math.min
+import android.content.Context
+import android.util.Log
 import com.example.offlinehqasr.data.entities.Summary
+import org.json.JSONObject
 
 object PremiumPrompt {
     val JSON_STRUCT_PROMPT = """
-RÔLE: Tu es un secrétaire de réunion expert.
-OBJECTIF: À partir de la transcription, génère un JSON structuré :
-- title
-- summary (context, bullets)
-- actions (who, what, when, priority)
-- topics
-- entities
-- keywords
+RÔLE: Tu es un secrétaire de réunion expert spécialisé dans le suivi de réunions professionnelles.
+OBJECTIF: À partir de la transcription suivante, renvoie EXCLUSIVEMENT un JSON valide respectant exactement ce schéma :
+{
+  "title": string,
+  "summary": {
+    "context": string,
+    "bullets": string[]
+  },
+  "actions": [{
+    "who": string,
+    "what": string,
+    "due": string,
+    "priority": string,
+    "status": string,
+    "confidence": number,
+    "relatedSegments": [{"startMs": number, "endMs": number}]
+  }],
+  "decisions": [{
+    "description": string,
+    "owner": string,
+    "timestampMs": number,
+    "confidence": number
+  }],
+  "citations": [{
+    "quote": string,
+    "speaker": string,
+    "startMs": number,
+    "endMs": number
+  }],
+  "sentiments": [{
+    "target": string,
+    "value": string,
+    "score": number
+  }],
+  "participants": [{
+    "name": string,
+    "role": string
+  }],
+  "tags": string[],
+  "keywords": string[],
+  "topics": string[],
+  "timings": [{
+    "label": string,
+    "startMs": number,
+    "endMs": number
+  }],
+  "durationMs": number
+}
 CONTRAINTES:
-- Français, fidèle au texte
-- Sortie JSON uniquement
+- utilise exclusivement le français,
+- cite fidèlement les faits et chiffres,
+- n'invente rien hors transcription,
+- aucune prose hors JSON, pas de code block.
 TRANSCRIPTION:
 <<<TRANSCRIPT>>>
 """.trimIndent()
 }
 
 object Summarizer {
-    // Offline naive summarizer. Replace with local LLM if available.
-    fun summarizeToJson(text: String, durationMs: Long): com.example.offlinehqasr.data.entities.Summary {
-        val title = text.split('.', '!', '?').firstOrNull()?.take(80) ?: "Session audio"
-        val context = if (text.length > 200) text.take(200) + "…" else text
-        val bullets = text.split('.', '!', '?').map { it.trim() }.filter { it.length > 20 }.take(5)
-        val topics = extractTopWords(text, 5)
-        val keywords = extractTopWords(text, 10)
+    private const val TAG = "Summarizer"
 
-        val root = JSONObject()
-        root.put("title", title)
-        val sum = JSONObject()
-        sum.put("context", context)
-        val b = JSONArray(); bullets.forEach { b.put(it) }
-        sum.put("bullets", b)
-        root.put("summary", sum)
-        root.put("actions", JSONArray()) // user to fill
-        val t = JSONArray(); topics.forEach { t.put(it) }
-        root.put("topics", t)
-        val k = JSONArray(); keywords.forEach { k.put(it) }
-        root.put("keywords", k)
-        return Summary(0, 0, root.toString())
+    fun summarizeToJson(
+        context: Context,
+        text: String,
+        durationMs: Long
+    ): Summary {
+        val decoratedTranscript = "Durée estimée (ms): $durationMs\n$text"
+        val prompt = PremiumPrompt.JSON_STRUCT_PROMPT.replace("<<<TRANSCRIPT>>>", decoratedTranscript)
+        val validator = StructuredSummaryValidator()
+        val llm = LocalLlmClient.create(context)
+        val llmJson = llm?.generateStructuredSummary(prompt, durationMs)
+        val candidate = llmJson
+            ?.let { runCatching { JSONObject(it) }.onFailure { Log.w(TAG, "JSON LLM invalide", it) }.getOrNull() }
+            ?.takeIf { validator.isValid(it) }
+
+        if (candidate != null) {
+            return Summary(0, 0, candidate.toString())
+        }
+
+        if (llm == null) {
+            Log.w(TAG, "Modèle LLM local absent, utilisation du fallback heuristique")
+        } else {
+            Log.w(TAG, "Sortie LLM rejetée, fallback heuristique appliqué")
+        }
+
+        val fallback = FallbackSummarizer.generate(text, durationMs)
+        return Summary(0, 0, fallback.toString())
     }
-
-    private fun extractTopWords(text: String, n: Int): List<String> {
-        val words = text.lowercase()
-            .replace(Regex("[^a-zàâçéèêëîïôûùüÿñæœ0-9\s-]"), " ")
-            .split(Regex("\s+"))
-            .filter { it.length > 3 && it !in stopWords }
-        val counts = words.groupingBy { it }.eachCount()
-        return counts.entries.sortedByDescending { it.value }.map { it.key }.take(n)
-    }
-
-    private val stopWords = setOf(
-        "dans","pour","avec","vous","nous","mais","elles","ils","ceci","cela","cest","sont","plus","alors","comme","avoir",
-        "être","quoi","tout","aussi","leur","leurs","dont","chez","entre","ainsi","cela","cette","plusieurs","moins","tous",
-        "this","that","with","have","from","your","about","there","will","their","they","them","been","were","when","what",
-        "where","which","than","then","into","over","after","before","because","while","should","could","would","these","those",
-        "here","onto","ours","ourselves","hers","herself","himself","yourself"
-    )
 }

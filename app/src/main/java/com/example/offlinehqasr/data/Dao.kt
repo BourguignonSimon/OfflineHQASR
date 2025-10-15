@@ -44,3 +44,37 @@ interface SegmentDao {
     @Query("DELETE FROM segments WHERE recordingId = :recId")
     fun deleteByRecording(recId: Long)
 }
+
+data class RecordingSearchRow(
+    @Embedded(prefix = "recording_") val recording: Recording,
+    @ColumnInfo(name = "snippet") val snippet: String?
+)
+
+@Dao
+interface TranscriptSearchDao {
+    @Query("DELETE FROM transcript_fts WHERE recordingId = :recordingId")
+    fun deleteByRecording(recordingId: Long)
+
+    @Insert
+    fun insert(entry: TranscriptFts)
+
+    @Query(
+        "SELECT " +
+            "recordings.id AS recording_id, " +
+            "recordings.filePath AS recording_filePath, " +
+            "recordings.createdAt AS recording_createdAt, " +
+            "recordings.durationMs AS recording_durationMs, " +
+            "snippet(transcript_fts, 1, '', '', '…', 10) AS snippet " +
+            "FROM transcript_fts " +
+            "INNER JOIN recordings ON recordings.id = transcript_fts.recordingId " +
+            "WHERE transcript_fts MATCH :matchQuery " +
+            "ORDER BY bm25(transcript_fts)"
+    )
+    fun searchRecordings(matchQuery: String): List<RecordingSearchRow>
+
+    @Query("SELECT tags FROM transcript_fts WHERE tags != ''")
+    fun getAllTagsRaw(): List<String>
+
+    @Query("SELECT participants FROM transcript_fts WHERE participants != ''")
+    fun getAllParticipantsRaw(): List<String>
+}
