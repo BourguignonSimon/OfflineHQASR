@@ -1,0 +1,72 @@
+# Android Studio & IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Gradle
+.gradle/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local configuration
+local.properties
+app/local.properties
+gradle-app.setting
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Android specific
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aar
+*.aab
+*.ap_
+*.dex
+*.class
+*.keystore
+*.jks
+*.so
+*.o
+*.obj
+
+# Generated files
+generated/
+navigation.json
+output.json
+
+# Kotlin/Java
+*.kt.kts~
+*.kotlin_module
+
+# NDK/Native
+obj/
+lib/
+jniLibs/
+ndk-build/
+cmake-build-*/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Lint
+lint/tmp/
+lint/reports/
+
+# Tests
+test-results/
+reports/
+
+# Misc
+*.orig
+*.rej
+.idea_modules/
