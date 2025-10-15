@@ -9,15 +9,19 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
+import android.media.AudioRecord.READ_BLOCKING
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import android.util.Log
 import com.example.offlinehqasr.R
 import com.example.offlinehqasr.data.AppDb
 import com.example.offlinehqasr.data.entities.Recording
+import com.example.offlinehqasr.recorder.audio.AudioDeviceSelector
+import com.example.offlinehqasr.recorder.audio.AudioProcessingChain
+import com.example.offlinehqasr.recorder.audio.GainNormalizer
+import com.example.offlinehqasr.recorder.audio.RnNoiseDenoiser
 import com.example.offlinehqasr.ui.MainActivity
 import kotlinx.coroutines.*
 import java.io.File
@@ -78,13 +82,23 @@ class RecordService : Service() {
             val channelConfig = AudioFormat.CHANNEL_IN_MONO
             val encoding = AudioFormat.ENCODING_PCM_16BIT
             val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, encoding)
-            val recorder = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                sampleRate,
-                channelConfig,
-                encoding,
-                minBuf * 2
-            )
+            require(minBuf > 0) { "Invalid buffer size reported by AudioRecord" }
+
+            val deviceSelection = AudioDeviceSelector.select(this)
+            Log.i(TAG, "recordLoop: selected input=${deviceSelection.label}")
+
+            val audioFormat = AudioFormat.Builder()
+                .setSampleRate(sampleRate)
+                .setEncoding(encoding)
+                .setChannelMask(channelConfig)
+                .build()
+
+            val recorder = AudioRecord.Builder()
+                .setAudioSource(deviceSelection.audioSource)
+                .setAudioFormat(audioFormat)
+                .setBufferSizeInBytes(minBuf * 2)
+                .apply { deviceSelection.preferredDevice?.let { setPreferredDevice(it) } }
+                .build()
 
             val dir = File(filesDir, "audio"); dir.mkdirs()
             outFile = File(dir, "rec_${System.currentTimeMillis()}.wav")
@@ -93,13 +107,50 @@ class RecordService : Service() {
                 FileOutputStream(outFile).use { fos ->
                     // Write provisional WAV header (will fix sizes at end)
                     writeWavHeader(fos, 1, sampleRate, 16, 0)
-                    val buffer = ByteArray(minBuf)
+                    val byteBuffer = ByteArray(minBuf)
+                    val shortBuffer = ShortArray(minBuf / 2)
+                    val processingChain = AudioProcessingChain(
+                        listOf(
+                            GainNormalizer(),
+                            RnNoiseDenoiser(this)
+                        )
+                    )
+                    val outputBuffer = ByteArray(minBuf)
                     startTime = System.currentTimeMillis()
                     recorder.startRecording()
                     while (isActive) {
-                        val read = recorder.read(buffer, 0, buffer.size)
-                        if (read > 0) fos.write(buffer, 0, read)
-                        delay(10)
+                        val read = recorder.read(byteBuffer, 0, byteBuffer.size, READ_BLOCKING)
+                        when {
+                            read > 0 -> {
+                                val samples = read / 2
+                                ByteBuffer.wrap(byteBuffer, 0, read)
+                                    .order(ByteOrder.LITTLE_ENDIAN)
+                                    .asShortBuffer()
+                                    .get(shortBuffer, 0, samples)
+                                processingChain.process(shortBuffer, samples)
+                                shortsToBytes(shortBuffer, samples, outputBuffer)
+                                fos.write(outputBuffer, 0, samples * 2)
+                            }
+                            read == AudioRecord.ERROR_INVALID_OPERATION -> {
+                                notifyRecordingError(ERROR_INVALID_OPERATION)
+                                break
+                            }
+                            read == AudioRecord.ERROR_BAD_VALUE -> {
+                                notifyRecordingError(ERROR_BAD_VALUE)
+                                break
+                            }
+                            read == AudioRecord.ERROR_DEAD_OBJECT -> {
+                                notifyRecordingError(ERROR_DISCONNECTED)
+                                break
+                            }
+                            else -> {
+                                if (read < 0) {
+                                    notifyRecordingError(ERROR_UNKNOWN)
+                                    break
+                                }
+                                delay(10)
+                            }
+                        }
                     }
                     recorder.stop()
                     // Fix header sizes
@@ -121,8 +172,12 @@ class RecordService : Service() {
 
             // Enqueue transcription work
             TranscribeWork.enqueue(this, recId, outFile.absolutePath)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Recording permission revoked", e)
+            notifyRecordingError(ERROR_PERMISSION)
         } catch (e: Exception) {
             Log.e(TAG, "Recording failed", e)
+            notifyRecordingError(ERROR_UNKNOWN)
         } finally {
             stopSelf()
         }
@@ -148,11 +203,34 @@ class RecordService : Service() {
         stream.write(header.array(), 0, 44)
     }
 
+    private fun notifyRecordingError(code: String) {
+        Log.w(TAG, "recording error: $code")
+        val intent = Intent(ACTION_RECORDING_ERROR)
+            .putExtra(EXTRA_ERROR_CODE, code)
+        sendBroadcast(intent)
+    }
+
+    private fun shortsToBytes(input: ShortArray, length: Int, output: ByteArray) {
+        var o = 0
+        for (i in 0 until length) {
+            val value = input[i].toInt()
+            output[o++] = (value and 0xFF).toByte()
+            output[o++] = ((value ushr 8) and 0xFF).toByte()
+        }
+    }
+
     companion object {
         private const val NOTIFICATION_ID = 1
         private const val WAV_HEADER_SIZE = 44L
         private val running = AtomicBoolean(false)
         private const val TAG = "RecordService"
+        const val ACTION_RECORDING_ERROR = "com.example.offlinehqasr.RECORDING_ERROR"
+        const val EXTRA_ERROR_CODE = "code"
+        const val ERROR_PERMISSION = "permission"
+        const val ERROR_INVALID_OPERATION = "invalid_operation"
+        const val ERROR_BAD_VALUE = "bad_value"
+        const val ERROR_DISCONNECTED = "disconnected"
+        const val ERROR_UNKNOWN = "unknown"
 
         fun start(context: Context) {
             val intent = Intent(context, RecordService::class.java)

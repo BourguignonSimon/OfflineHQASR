@@ -1,12 +1,16 @@
 package com.example.offlinehqasr.ui
 
 import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.widget.Toast
+import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -26,6 +30,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var isRecording = false
+    private var errorBannerVisible = false
+    private var errorReceiverRegistered = false
 
     private val audioPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -49,6 +55,8 @@ class MainActivity : AppCompatActivity() {
         setSupportActionBar(binding.toolbar)
         binding.recordingsList.layoutManager = LinearLayoutManager(this)
 
+        binding.errorBannerClose.setOnClickListener { hideRecordingError() }
+
         binding.recordFab.setOnClickListener {
             if (!isRecording) startRecording() else stopRecordingInternal()
         }
@@ -66,6 +74,27 @@ class MainActivity : AppCompatActivity() {
         updateStatus()
         refreshList()
         syncRecordingState()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!errorReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                recordErrorReceiver,
+                IntentFilter(RecordService.ACTION_RECORDING_ERROR),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            errorReceiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (errorReceiverRegistered) {
+            unregisterReceiver(recordErrorReceiver)
+            errorReceiverRegistered = false
+        }
     }
 
     override fun onResume() {
@@ -172,6 +201,36 @@ class MainActivity : AppCompatActivity() {
         binding.recordFab.setImageResource(
             if (active) android.R.drawable.ic_media_pause else android.R.drawable.ic_btn_speak_now
         )
+        if (!active && errorBannerVisible) {
+            // ensure stale error is visible when we return to idle
+            binding.errorBanner.visibility = View.VISIBLE
+        }
+    }
+
+    private fun showRecordingError(code: String?) {
+        errorBannerVisible = true
+        val message = when (code) {
+            RecordService.ERROR_PERMISSION -> getString(R.string.microphone_error_permission)
+            RecordService.ERROR_INVALID_OPERATION -> getString(R.string.microphone_error_invalid_operation)
+            RecordService.ERROR_BAD_VALUE -> getString(R.string.microphone_error_bad_value)
+            RecordService.ERROR_DISCONNECTED -> getString(R.string.microphone_error_disconnected)
+            RecordService.ERROR_UNKNOWN -> getString(R.string.microphone_error_unknown)
+            else -> getString(R.string.microphone_error_placeholder)
+        }
+        binding.errorBannerText.text = message
+        binding.errorBanner.visibility = View.VISIBLE
+    }
+
+    private fun hideRecordingError() {
+        errorBannerVisible = false
+        binding.errorBanner.visibility = View.GONE
+    }
+
+    private val recordErrorReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val reason = intent.getStringExtra(RecordService.EXTRA_ERROR_CODE)
+            showRecordingError(reason)
+        }
     }
 
     private fun modelStatusLabel(dir: File): String {

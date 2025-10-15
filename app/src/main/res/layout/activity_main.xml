@@ -20,6 +20,52 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="?attr/actionBarSize">
 
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/errorBanner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone"
+            app:cardBackgroundColor="@color/design_default_color_error"
+            app:strokeColor="@android:color/transparent">
+
+            <LinearLayout
+                android:orientation="horizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="12dp"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:contentDescription="@string/microphone_error_icon"
+                    android:src="@android:drawable/ic_dialog_alert"
+                    android:tint="@android:color/white" />
+
+                <TextView
+                    android:id="@+id/errorBannerText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:textColor="@android:color/white"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                    android:text="@string/microphone_error_placeholder" />
+
+                <ImageButton
+                    android:id="@+id/errorBannerClose"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/microphone_error_dismiss"
+                    android:background="@android:color/transparent"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    android:tint="@android:color/white" />
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"
