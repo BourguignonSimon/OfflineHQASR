@@ -9,16 +9,23 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
-import android.media.audiofx.AutomaticGainControl
-import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.IBinder
+import android.media.AudioRecord.READ_BLOCKING
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import android.util.Log
 import com.example.offlinehqasr.R
 import com.example.offlinehqasr.data.AppDb
 import com.example.offlinehqasr.data.entities.Recording
+import com.example.offlinehqasr.recorder.audio.AudioDeviceSelector
+import com.example.offlinehqasr.recorder.audio.AudioProcessingChain
+import com.example.offlinehqasr.recorder.audio.GainNormalizer
+import com.example.offlinehqasr.recorder.audio.RnNoiseDenoiser
+import com.example.offlinehqasr.security.AesGcmCipher
+import com.example.offlinehqasr.security.AppKeystore
+import com.example.offlinehqasr.security.EncryptionMetadata
+import com.example.offlinehqasr.security.SecureFileUtils
 import com.example.offlinehqasr.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException
@@ -83,98 +90,105 @@ class RecordService : Service() {
             val sampleRate = 48_000
             val selection = AudioDeviceSelector.select(this)
             val encoding = AudioFormat.ENCODING_PCM_16BIT
-            val channelCount = if (selection.channelMask == AudioFormat.CHANNEL_IN_STEREO) 2 else 1
-            val bytesPerFrame = channelCount * 2
-            val minBuf = AudioRecord.getMinBufferSize(sampleRate, selection.channelMask, encoding)
-            if (minBuf <= 0) {
-                throw IllegalStateException("Min buffer size invalid: $minBuf")
-            }
-            val bufferSizeInBytes = (minBuf * 2).coerceAtLeast(sampleRate * bytesPerFrame)
-            val recorder = AudioRecord.Builder()
-                .setAudioSource(selection.audioSource)
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setSampleRate(sampleRate)
-                        .setEncoding(encoding)
-                        .setChannelMask(selection.channelMask)
-                        .build()
-                )
-                .setBufferSizeInBytes(bufferSizeInBytes)
+            val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, encoding)
+            require(minBuf > 0) { "Invalid buffer size reported by AudioRecord" }
+
+            val deviceSelection = AudioDeviceSelector.select(this)
+            Log.i(TAG, "recordLoop: selected input=${deviceSelection.label}")
+
+            val audioFormat = AudioFormat.Builder()
+                .setSampleRate(sampleRate)
+                .setEncoding(encoding)
+                .setChannelMask(channelConfig)
                 .build()
 
-            selection.preferredDevice?.let {
-                try {
-                    recorder.preferredDevice = it
-                } catch (t: Throwable) {
-                    Log.w(TAG, "Unable to set preferred device", t)
-                }
-            }
-
-            val noiseSuppressor = if (NoiseSuppressor.isAvailable()) {
-                runCatching { NoiseSuppressor.create(recorder.audioSessionId) }.getOrNull()?.apply { enabled = true }
-            } else null
-            val agc = if (AutomaticGainControl.isAvailable()) {
-                runCatching { AutomaticGainControl.create(recorder.audioSessionId) }.getOrNull()?.apply { enabled = false }
-            } else null
-
-            val preprocessor = AudioPreprocessor(channelCount)
+            val recorder = AudioRecord.Builder()
+                .setAudioSource(deviceSelection.audioSource)
+                .setAudioFormat(audioFormat)
+                .setBufferSizeInBytes(minBuf * 2)
+                .apply { deviceSelection.preferredDevice?.let { setPreferredDevice(it) } }
+                .build()
 
             val dir = File(filesDir, "audio"); dir.mkdirs()
             outFile = File(dir, "rec_${System.currentTimeMillis()}.wav")
 
-            broadcastMicrophoneStatus(STATUS_OK, selection.label)
-
+            var totalPlainBytes = 0L
+            var encryptionMetadata: EncryptionMetadata? = null
+            SecureFileUtils.clearMetadata(outFile)
+            var encryptionCompleted = false
             try {
                 FileOutputStream(outFile).use { fos ->
-                    writeWavHeader(fos, channelCount, sampleRate, 16, 0)
-                    val shortBuffer = ShortArray(bufferSizeInBytes / 2)
-                    val byteBuffer = ByteBuffer.allocate(shortBuffer.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+                    // Write provisional WAV header (will fix sizes at end)
+                    writeWavHeader(fos, 1, sampleRate, 16, 0)
+                    val encrypting = AesGcmCipher.wrapForEncryption(AppKeystore.AUDIO_KEY_ALIAS, fos)
+                    encryptionMetadata = encrypting.metadata
+                    val cipherStream = encrypting.stream
+                    val byteBuffer = ByteArray(minBuf)
+                    val shortBuffer = ShortArray(minBuf / 2)
+                    val processingChain = AudioProcessingChain(
+                        listOf(
+                            GainNormalizer(),
+                            RnNoiseDenoiser(this)
+                        )
+                    )
+                    val outputBuffer = ByteArray(minBuf)
                     startTime = System.currentTimeMillis()
                     recorder.startRecording()
-
-                    var silentSamples = 0L
-                    var lastStatus = STATUS_OK
-                    val silenceThreshold = (sampleRate.toLong() * channelCount * SILENCE_WARNING_MS / 1000L)
-                        .coerceAtLeast(sampleRate.toLong() / 4)
-
-                    while (isActive && running.get()) {
-                        val read = recorder.read(shortBuffer, 0, shortBuffer.size, AudioRecord.READ_BLOCKING)
-                        if (read <= 0) {
-                            if (read == AudioRecord.ERROR_INVALID_OPERATION ||
-                                read == AudioRecord.ERROR_BAD_VALUE ||
-                                read == AudioRecord.ERROR_DEAD_OBJECT
-                            ) {
-                                broadcastMicrophoneStatus(STATUS_ERROR, "lecture invalide ($read)")
-                                throw IllegalStateException("AudioRecord read failed: $read")
+                    try {
+                        while (isActive) {
+                            val read = recorder.read(byteBuffer, 0, byteBuffer.size, READ_BLOCKING)
+                            when {
+                                read > 0 -> {
+                                    val samples = read / 2
+                                    ByteBuffer.wrap(byteBuffer, 0, read)
+                                        .order(ByteOrder.LITTLE_ENDIAN)
+                                        .asShortBuffer()
+                                        .get(shortBuffer, 0, samples)
+                                    processingChain.process(shortBuffer, samples)
+                                    shortsToBytes(shortBuffer, samples, outputBuffer)
+                                    cipherStream.write(outputBuffer, 0, samples * 2)
+                                    totalPlainBytes += samples * 2
+                                }
+                            read == AudioRecord.ERROR_INVALID_OPERATION -> {
+                                notifyRecordingError(ERROR_INVALID_OPERATION)
+                                break
                             }
-                            continue
+                            read == AudioRecord.ERROR_BAD_VALUE -> {
+                                notifyRecordingError(ERROR_BAD_VALUE)
+                                break
+                            }
+                            read == AudioRecord.ERROR_DEAD_OBJECT -> {
+                                notifyRecordingError(ERROR_DISCONNECTED)
+                                break
+                            }
+                            else -> {
+                                if (read < 0) {
+                                    notifyRecordingError(ERROR_UNKNOWN)
+                                    break
+                                }
+                                delay(10)
+                            }
                         }
-
-                        val stats = preprocessor.process(shortBuffer, read)
-                        silentSamples = if (stats.isSilence) silentSamples + read else 0L
-
-                        if (silentSamples >= silenceThreshold && lastStatus != STATUS_WARNING) {
-                            broadcastMicrophoneStatus(STATUS_WARNING, selection.label)
-                            lastStatus = STATUS_WARNING
-                        } else if (!stats.isSilence && lastStatus != STATUS_OK) {
-                            broadcastMicrophoneStatus(STATUS_OK, selection.label)
-                            lastStatus = STATUS_OK
-                        }
-
-                        byteBuffer.clear()
-                        for (i in 0 until read) {
-                            byteBuffer.putShort(shortBuffer[i])
-                        }
-                        fos.write(byteBuffer.array(), 0, read * 2)
+                    } finally {
+                        cipherStream.close()
                     }
 
                     recorder.stop()
-                    val totalAudioLen = outFile.length() - WAV_HEADER_SIZE
+                    // Fix header sizes
                     RandomAccessFile(outFile, "rw").use { raf ->
                         raf.seek(0)
-                        writeWavHeader(raf, channelCount, sampleRate, 16, totalAudioLen)
+                        writeWavHeader(raf, 1, sampleRate, 16, totalPlainBytes.toInt())
                     }
                 }
+                encryptionMetadata?.let {
+                    SecureFileUtils.persistMetadata(outFile, it)
+                    encryptionCompleted = true
+                }
+            } catch (e: Exception) {
+                if (!encryptionCompleted) {
+                    SecureFileUtils.clearMetadata(outFile)
+                }
+                throw e
             } finally {
                 runCatching { noiseSuppressor?.release() }
                 runCatching { agc?.release() }
@@ -188,11 +202,12 @@ class RecordService : Service() {
             )
 
             TranscribeWork.enqueue(this, recId, outFile.absolutePath)
-        } catch (e: CancellationException) {
-            Log.i(TAG, "Recording cancelled")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Recording permission revoked", e)
+            notifyRecordingError(ERROR_PERMISSION)
         } catch (e: Exception) {
             Log.e(TAG, "Recording failed", e)
-            broadcastMicrophoneStatus(STATUS_ERROR, e.message ?: "erreur inconnue")
+            notifyRecordingError(ERROR_UNKNOWN)
         } finally {
             running.set(false)
             broadcastMicrophoneStatus(STATUS_IDLE, null)
@@ -221,20 +236,34 @@ class RecordService : Service() {
         stream.write(header.array(), 0, 44)
     }
 
+    private fun notifyRecordingError(code: String) {
+        Log.w(TAG, "recording error: $code")
+        val intent = Intent(ACTION_RECORDING_ERROR)
+            .putExtra(EXTRA_ERROR_CODE, code)
+        sendBroadcast(intent)
+    }
+
+    private fun shortsToBytes(input: ShortArray, length: Int, output: ByteArray) {
+        var o = 0
+        for (i in 0 until length) {
+            val value = input[i].toInt()
+            output[o++] = (value and 0xFF).toByte()
+            output[o++] = ((value ushr 8) and 0xFF).toByte()
+        }
+    }
+
     companion object {
         private const val NOTIFICATION_ID = 1
         private const val WAV_HEADER_SIZE = 44L
         private val running = AtomicBoolean(false)
         private const val TAG = "RecordService"
-        private const val SILENCE_WARNING_MS = 3_000
-
-        const val ACTION_MICROPHONE_STATUS = "com.example.offlinehqasr.recorder.MIC_STATUS"
-        const val EXTRA_STATUS = "status"
-        const val EXTRA_MESSAGE = "message"
-        const val STATUS_OK = "ok"
-        const val STATUS_WARNING = "warning"
-        const val STATUS_ERROR = "error"
-        const val STATUS_IDLE = "idle"
+        const val ACTION_RECORDING_ERROR = "com.example.offlinehqasr.RECORDING_ERROR"
+        const val EXTRA_ERROR_CODE = "code"
+        const val ERROR_PERMISSION = "permission"
+        const val ERROR_INVALID_OPERATION = "invalid_operation"
+        const val ERROR_BAD_VALUE = "bad_value"
+        const val ERROR_DISCONNECTED = "disconnected"
+        const val ERROR_UNKNOWN = "unknown"
 
         fun start(context: Context) {
             val intent = Intent(context, RecordService::class.java)

@@ -21,21 +21,48 @@
         android:layout_marginTop="?attr/actionBarSize">
 
         <com.google.android.material.card.MaterialCardView
-            android:id="@+id/microphoneBanner"
+            android:id="@+id/errorBanner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
             android:visibility="gone"
-            android:layout_marginBottom="12dp"
-            app:cardElevation="0dp"
-            app:cardBackgroundColor="?attr/colorSecondaryContainer">
+            app:cardBackgroundColor="@color/design_default_color_error"
+            app:strokeColor="@android:color/transparent">
 
-            <TextView
-                android:id="@+id/microphoneBannerText"
+            <LinearLayout
+                android:orientation="horizontal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:padding="12dp"
-                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                android:textColor="?attr/colorOnSecondaryContainer" />
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:contentDescription="@string/microphone_error_icon"
+                    android:src="@android:drawable/ic_dialog_alert"
+                    android:tint="@android:color/white" />
+
+                <TextView
+                    android:id="@+id/errorBannerText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:textColor="@android:color/white"
+                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                    android:text="@string/microphone_error_placeholder" />
+
+                <ImageButton
+                    android:id="@+id/errorBannerClose"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/microphone_error_dismiss"
+                    android:background="@android:color/transparent"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    android:tint="@android:color/white" />
+
+            </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
 
@@ -46,6 +73,61 @@
             android:text="Vosk: — | Whisper: —"
             android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
             android:paddingBottom="8dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/searchLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="8dp"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/searchInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:hint="@string/search_hint" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:id="@+id/tagFiltersLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="4dp"
+            android:text="@string/filter_tags_label"
+            android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+            android:visibility="gone" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/tagChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="8dp"
+            android:visibility="gone"
+            app:singleSelection="false"
+            app:chipSpacingHorizontal="8dp"
+            app:chipSpacingVertical="4dp" />
+
+        <TextView
+            android:id="@+id/participantFiltersLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="4dp"
+            android:text="@string/filter_participants_label"
+            android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+            android:visibility="gone" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/participantChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="8dp"
+            android:visibility="gone"
+            app:singleSelection="false"
+            app:chipSpacingHorizontal="8dp"
+            app:chipSpacingVertical="4dp" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recordingsList"

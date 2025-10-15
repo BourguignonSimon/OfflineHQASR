@@ -5,18 +5,19 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ConcatAdapter
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.offlinehqasr.data.AppDb
 import com.example.offlinehqasr.databinding.ActivityDetailBinding
 import com.example.offlinehqasr.export.ExportUtils
+import com.example.offlinehqasr.summary.StructuredSummaryParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 class DetailActivity : AppCompatActivity(), DetailHeaderAdapter.Callbacks {
 
@@ -131,29 +132,66 @@ class DetailActivity : AppCompatActivity(), DetailHeaderAdapter.Callbacks {
     }
 
     private fun parseSummary(json: String): DetailHeaderAdapter.SummaryPreview? {
-        return runCatching {
-            val obj = JSONObject(json)
-            val summaryObj = obj.optJSONObject("summary") ?: return null
-            val context = summaryObj.optString("context")
-            val bulletsArray = summaryObj.optJSONArray("bullets")
-            val bullets = mutableListOf<String>()
-            if (bulletsArray != null) {
-                for (i in 0 until bulletsArray.length()) {
-                    bulletsArray.optString(i)?.takeIf { it.isNotBlank() }?.let { bullets.add(it) }
+        val structured = StructuredSummaryParser.parseOrNull(json) ?: return null
+        return DetailHeaderAdapter.SummaryPreview(
+            context = structured.summary.context,
+            bullets = structured.summary.bullets,
+            topics = structured.topics,
+            keywords = structured.keywords,
+            actions = structured.actions.map { action ->
+                val extras = listOfNotNull(
+                    action.due.takeIf { it.isNotBlank() }?.let { "échéance: $it" },
+                    action.priority.takeIf { it.isNotBlank() }?.let { "priorité: $it" },
+                    action.status.takeIf { it.isNotBlank() }?.let { "statut: $it" }
+                )
+                buildString {
+                    append(action.who.ifBlank { "—" })
+                    append(" · ")
+                    append(action.what.ifBlank { "Action à préciser" })
+                    if (extras.isNotEmpty()) {
+                        append(" (" + extras.joinToString(", ") + ")")
+                    }
                 }
+            },
+            decisions = structured.decisions.map { decision ->
+                val formattedTime = if (decision.timestampMs > 0) {
+                    formatTimestamp(decision.timestampMs)
+                } else null
+                listOfNotNull(decision.description, decision.owner.takeIf { it.isNotBlank() }, formattedTime)
+                    .joinToString(" • ")
+            },
+            participants = structured.participants.map { participant ->
+                if (participant.role.isBlank()) participant.name else "${participant.name} (${participant.role})"
+            },
+            tags = structured.tags,
+            sentiments = structured.sentiments.map { sentiment ->
+                buildString {
+                    append(sentiment.target.ifBlank { "Général" })
+                    append(": ")
+                    append(sentiment.value.ifBlank { "neutre" })
+                    append(" (${String.format(Locale.getDefault(), "%.0f%%", sentiment.score * 100)})")
+                }
+            },
+            citations = structured.citations.map { citation ->
+                val window = formatRange(citation.startMs, citation.endMs)
+                "\"${citation.quote}\" — ${citation.speaker.ifBlank { "Intervenant" }} [$window]"
+            },
+            timings = structured.timings.map { timing ->
+                val window = formatRange(timing.startMs, timing.endMs)
+                "${timing.label}: $window"
             }
-            val topics = obj.optJSONArray("topics")?.let { arr ->
-                (0 until arr.length()).mapNotNull { arr.optString(it) }.filter { it.isNotBlank() }
-            } ?: emptyList()
-            val keywords = obj.optJSONArray("keywords")?.let { arr ->
-                (0 until arr.length()).mapNotNull { arr.optString(it) }.filter { it.isNotBlank() }
-            } ?: emptyList()
-            DetailHeaderAdapter.SummaryPreview(
-                context = context,
-                bullets = bullets,
-                topics = topics,
-                keywords = keywords
-            )
-        }.getOrNull()
+        )
+    }
+
+    private fun formatTimestamp(ms: Long): String {
+        val minutes = TimeUnit.MILLISECONDS.toMinutes(ms)
+        val seconds = TimeUnit.MILLISECONDS.toSeconds(ms) % 60
+        return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+    }
+
+    private fun formatRange(start: Long, end: Long): String {
+        val startStr = formatTimestamp(start)
+        val endStr = formatTimestamp(end)
+        return "$startStr → $endStr"
     }
 }
