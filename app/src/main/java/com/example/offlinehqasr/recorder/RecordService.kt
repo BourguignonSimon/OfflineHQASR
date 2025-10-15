@@ -22,6 +22,10 @@ import com.example.offlinehqasr.recorder.audio.AudioDeviceSelector
 import com.example.offlinehqasr.recorder.audio.AudioProcessingChain
 import com.example.offlinehqasr.recorder.audio.GainNormalizer
 import com.example.offlinehqasr.recorder.audio.RnNoiseDenoiser
+import com.example.offlinehqasr.security.AesGcmCipher
+import com.example.offlinehqasr.security.AppKeystore
+import com.example.offlinehqasr.security.EncryptionMetadata
+import com.example.offlinehqasr.security.SecureFileUtils
 import com.example.offlinehqasr.ui.MainActivity
 import kotlinx.coroutines.*
 import java.io.File
@@ -103,10 +107,17 @@ class RecordService : Service() {
             val dir = File(filesDir, "audio"); dir.mkdirs()
             outFile = File(dir, "rec_${System.currentTimeMillis()}.wav")
 
+            var totalPlainBytes = 0L
+            var encryptionMetadata: EncryptionMetadata? = null
+            SecureFileUtils.clearMetadata(outFile)
+            var encryptionCompleted = false
             try {
                 FileOutputStream(outFile).use { fos ->
                     // Write provisional WAV header (will fix sizes at end)
                     writeWavHeader(fos, 1, sampleRate, 16, 0)
+                    val encrypting = AesGcmCipher.wrapForEncryption(AppKeystore.AUDIO_KEY_ALIAS, fos)
+                    encryptionMetadata = encrypting.metadata
+                    val cipherStream = encrypting.stream
                     val byteBuffer = ByteArray(minBuf)
                     val shortBuffer = ShortArray(minBuf / 2)
                     val processingChain = AudioProcessingChain(
@@ -118,19 +129,21 @@ class RecordService : Service() {
                     val outputBuffer = ByteArray(minBuf)
                     startTime = System.currentTimeMillis()
                     recorder.startRecording()
-                    while (isActive) {
-                        val read = recorder.read(byteBuffer, 0, byteBuffer.size, READ_BLOCKING)
-                        when {
-                            read > 0 -> {
-                                val samples = read / 2
-                                ByteBuffer.wrap(byteBuffer, 0, read)
-                                    .order(ByteOrder.LITTLE_ENDIAN)
-                                    .asShortBuffer()
-                                    .get(shortBuffer, 0, samples)
-                                processingChain.process(shortBuffer, samples)
-                                shortsToBytes(shortBuffer, samples, outputBuffer)
-                                fos.write(outputBuffer, 0, samples * 2)
-                            }
+                    try {
+                        while (isActive) {
+                            val read = recorder.read(byteBuffer, 0, byteBuffer.size, READ_BLOCKING)
+                            when {
+                                read > 0 -> {
+                                    val samples = read / 2
+                                    ByteBuffer.wrap(byteBuffer, 0, read)
+                                        .order(ByteOrder.LITTLE_ENDIAN)
+                                        .asShortBuffer()
+                                        .get(shortBuffer, 0, samples)
+                                    processingChain.process(shortBuffer, samples)
+                                    shortsToBytes(shortBuffer, samples, outputBuffer)
+                                    cipherStream.write(outputBuffer, 0, samples * 2)
+                                    totalPlainBytes += samples * 2
+                                }
                             read == AudioRecord.ERROR_INVALID_OPERATION -> {
                                 notifyRecordingError(ERROR_INVALID_OPERATION)
                                 break
@@ -151,15 +164,25 @@ class RecordService : Service() {
                                 delay(10)
                             }
                         }
+                    } finally {
+                        cipherStream.close()
                     }
                     recorder.stop()
                     // Fix header sizes
-                    val totalAudioLen = outFile.length() - WAV_HEADER_SIZE
                     RandomAccessFile(outFile, "rw").use { raf ->
                         raf.seek(0)
-                        writeWavHeader(raf, 1, sampleRate, 16, totalAudioLen.toInt())
+                        writeWavHeader(raf, 1, sampleRate, 16, totalPlainBytes.toInt())
                     }
                 }
+                encryptionMetadata?.let {
+                    SecureFileUtils.persistMetadata(outFile, it)
+                    encryptionCompleted = true
+                }
+            } catch (e: Exception) {
+                if (!encryptionCompleted) {
+                    SecureFileUtils.clearMetadata(outFile)
+                }
+                throw e
             } finally {
                 recorder.release()
             }

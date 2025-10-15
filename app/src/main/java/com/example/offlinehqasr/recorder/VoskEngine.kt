@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.example.offlinehqasr.data.entities.Segment
 import com.example.offlinehqasr.data.entities.Transcript
+import com.example.offlinehqasr.security.AesGcmCipher
+import com.example.offlinehqasr.security.SecureFileUtils
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -28,11 +30,13 @@ class VoskEngine(private val ctx: Context) : SpeechToTextEngine {
 
         try {
             FileInputStream(wav).use { fis ->
+                val metadata = SecureFileUtils.readMetadata(wav)
                 fis.channel.position(WAV_HEADER_SIZE)
+                val pcmStream = metadata?.let { AesGcmCipher.wrapForDecryption(it, fis) } ?: fis
                 val recognizer = Recognizer(model, 48_000f)
                 try {
                     while (true) {
-                        val read = fis.read(buffer)
+                        val read = pcmStream.read(buffer)
                         if (read <= 0) break
                         if (recognizer.acceptWaveForm(buffer, read)) {
                             duration = parseResult(recognizer.result, segments, transcriptBuilder, duration)
@@ -41,6 +45,9 @@ class VoskEngine(private val ctx: Context) : SpeechToTextEngine {
                     // flush any trailing data
                     duration = parseResult(recognizer.finalResult, segments, transcriptBuilder, duration)
                 } finally {
+                    if (metadata != null) {
+                        pcmStream.close()
+                    }
                     recognizer.close()
                 }
             }
