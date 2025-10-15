@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.TypeConverters
 import com.example.offlinehqasr.data.dao.*
 import com.example.offlinehqasr.data.entities.*
+import com.example.offlinehqasr.security.DatabaseKeyProvider
+import net.sqlcipher.database.SQLiteDatabase
+import net.sqlcipher.database.SupportFactory
 
 @Database(
     entities = [Recording::class, Transcript::class, Summary::class, Segment::class],
@@ -21,7 +23,18 @@ abstract class AppDb : RoomDatabase() {
     companion object {
         @Volatile private var inst: AppDb? = null
         fun get(ctx: Context): AppDb = inst ?: synchronized(this) {
-            inst ?: Room.databaseBuilder(ctx, AppDb::class.java, "app.db").build().also { inst = it }
+            inst ?: run {
+                val passphrase = DatabaseKeyProvider.obtainPassphrase(ctx)
+                SQLiteDatabase.loadLibs(ctx)
+                val factory = SupportFactory(passphrase.copyOf())
+                try {
+                    Room.databaseBuilder(ctx, AppDb::class.java, "app.db")
+                        .openHelperFactory(factory)
+                        .build()
+                } finally {
+                    passphrase.fill(0)
+                }
+            }.also { inst = it }
         }
     }
 }

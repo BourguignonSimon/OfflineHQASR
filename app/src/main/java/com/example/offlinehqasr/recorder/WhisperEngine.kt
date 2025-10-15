@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.offlinehqasr.BuildConfig
 import com.example.offlinehqasr.data.entities.Segment
+import com.example.offlinehqasr.security.SecureFileUtils
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -23,71 +24,79 @@ class WhisperEngine(private val ctx: Context) : SpeechToTextEngine {
 
         val audioFile = File(path)
         require(audioFile.exists()) { "Fichier audio introuvable: $path" }
-
-        val modelFile = Companion.resolveModelFile(File(ctx.filesDir, "models/whisper"))
-            ?: throw WhisperUnavailableException("Aucun modèle Whisper trouvé.")
-        val wavInfo = readWavInfo(audioFile)
-        val durationMs = wavInfo.durationMs
-
-        val handle = nativeInit(
-            modelFile.absolutePath,
-            DEFAULT_LANGUAGE,
-            /*translate=*/false,
-            Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        )
-
-        val transcriptBuilder = StringBuilder()
-        val segments = mutableListOf<Segment>()
-        var offsetMs = 0L
-        var windowIndex = 0
-        var contextTokens = emptyArray<String>()
-
+        val workingFile = SecureFileUtils.decryptWavToTemp(ctx, audioFile)
+        val shouldDeleteWorkingFile = workingFile != audioFile
         try {
-            val maxIterations = ((durationMs / (WINDOW_SIZE_MS - OVERLAP_MS)) + 3).toInt().coerceAtLeast(1)
-            while (offsetMs < durationMs && windowIndex < maxIterations) {
-                windowIndex++
-                val json = nativeProcess(
-                    handle,
-                    audioFile.absolutePath,
-                    offsetMs,
-                    WINDOW_SIZE_MS,
-                    durationMs,
-                    contextTokens
-                )
-                if (json.isBlank()) {
-                    Log.w(TAG, "Le segment ${windowIndex} n'a retourné aucun résultat.")
-                    break
+
+            val modelFile = Companion.resolveModelFile(File(ctx.filesDir, "models/whisper"))
+                ?: throw WhisperUnavailableException("Aucun modèle Whisper trouvé.")
+            val wavInfo = readWavInfo(workingFile)
+            val durationMs = wavInfo.durationMs
+
+            val handle = nativeInit(
+                modelFile.absolutePath,
+                DEFAULT_LANGUAGE,
+                /*translate=*/false,
+                Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            )
+
+            val transcriptBuilder = StringBuilder()
+            val segments = mutableListOf<Segment>()
+            var offsetMs = 0L
+            var windowIndex = 0
+            var contextTokens = emptyArray<String>()
+
+            try {
+                val maxIterations = ((durationMs / (WINDOW_SIZE_MS - OVERLAP_MS)) + 3).toInt().coerceAtLeast(1)
+                while (offsetMs < durationMs && windowIndex < maxIterations) {
+                    windowIndex++
+                    val json = nativeProcess(
+                        handle,
+                        workingFile.absolutePath,
+                        offsetMs,
+                        WINDOW_SIZE_MS,
+                        durationMs,
+                        contextTokens
+                    )
+                    if (json.isBlank()) {
+                        Log.w(TAG, "Le segment ${windowIndex} n'a retourné aucun résultat.")
+                        break
+                    }
+                    val chunk = parseNativeChunk(json)
+                    if (chunk.text.isNotBlank()) {
+                        if (transcriptBuilder.isNotEmpty()) transcriptBuilder.append(' ')
+                        transcriptBuilder.append(chunk.text.trim())
+                    }
+
+                    if (chunk.segments.isNotEmpty()) {
+                        mergeSegments(segments, chunk.segments)
+                    }
+
+                    contextTokens = chunk.context.toTypedArray()
+
+                    val nextOffset = chunk.nextOffsetMs
+                        ?: (offsetMs + WINDOW_SIZE_MS - OVERLAP_MS).coerceAtLeast(offsetMs + MIN_STEP_MS)
+
+                    if (chunk.completed || nextOffset <= offsetMs) {
+                        break
+                    }
+
+                    offsetMs = min(nextOffset, durationMs)
                 }
-                val chunk = parseNativeChunk(json)
-                if (chunk.text.isNotBlank()) {
-                    if (transcriptBuilder.isNotEmpty()) transcriptBuilder.append(' ')
-                    transcriptBuilder.append(chunk.text.trim())
-                }
-
-                if (chunk.segments.isNotEmpty()) {
-                    mergeSegments(segments, chunk.segments)
-                }
-
-                contextTokens = chunk.context.toTypedArray()
-
-                val nextOffset = chunk.nextOffsetMs
-                    ?: (offsetMs + WINDOW_SIZE_MS - OVERLAP_MS).coerceAtLeast(offsetMs + MIN_STEP_MS)
-
-                if (chunk.completed || nextOffset <= offsetMs) {
-                    break
-                }
-
-                offsetMs = min(nextOffset, durationMs)
+            } finally {
+                nativeRelease(handle)
             }
-        } finally {
-            nativeRelease(handle)
-        }
 
-        return TranscriptionResult(
-            transcriptBuilder.toString().trim(),
-            segments,
-            durationMs
-        )
+            return TranscriptionResult(
+                transcriptBuilder.toString().trim(),
+                segments,
+                durationMs
+            )
+        } finally {
+            if (shouldDeleteWorkingFile) {
+                workingFile.delete()
+            }
+        }
     }
 
     private fun readWavInfo(file: File): WavInfo {
