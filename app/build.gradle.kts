@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
+val useWhisperJni = project.findProperty("useWhisperJni")?.toString()?.toBoolean() ?: false
+
 android {
     namespace = "com.example.offlinehqasr"
     compileSdk = 35
@@ -18,7 +20,15 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
-        buildConfigField("boolean", "USE_WHISPER", "false")
+        buildConfigField("boolean", "USE_WHISPER", if (useWhisperJni) "true" else "false")
+
+        if (useWhisperJni) {
+            externalNativeBuild {
+                cmake {
+                    arguments += listOf("-DWHISPER_STUB=ON")
+                }
+            }
+        }
     }
 
     buildTypes {
@@ -39,15 +49,21 @@ android {
 
     buildFeatures {
         viewBinding = true
-		buildConfig = true
+        buildConfig = true
     }
 
     kotlinOptions {
         jvmTarget = "17"
     }
-}
 
-val useWhisperJni = project.findProperty("useWhisperJni")?.toString()?.toBoolean() ?: false
+    if (useWhisperJni) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+            }
+        }
+    }
+}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
